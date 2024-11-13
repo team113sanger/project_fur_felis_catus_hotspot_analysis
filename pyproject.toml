@@ -1,0 +1,43 @@
+[tool.poetry]
+name = "fur_hotspot_mutations"
+version = "0.1.0"
+description = ""
+authors = ["Ian Vermes <iv3@sanger.ac.uk>"]
+readme = "README.md"
+packages = [{ include = "fur_hotspot_mutations", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Needed to support python 3.7 and older, with regards to a single source of
+# truth for this packages versioning
+importlib-metadata = { version = "~=1.0", python = "<3.8" }
+
+[tool.poetry.plugins."console_scripts"]
+# Scripts are defined here, and are added by Python to the PATH when the package
+# is installed. In a virtual environment, these scripts are added to the venv/bin/ directory.
+#
+# The syntax is as follows:
+# my_program = "fur_hotspot_mutations.my_subpackage:my_function_name"
+# Where:
+# - my_program is the name of the command to be run
+# - fur_hotspot_mutations is the name of your package, see 'tool.poetry.packages' above
+# - my_subpackage is the name of the subpackage, e.g. 'scripts' or 'entrypoints'
+# - my_function_name is the name of the function to be run, e.g. 'do_something' and not 'do_something()' (it should take no arguments)
+
+[tool.pytest.ini_options]
+# Pytest setting go here.
+#
+# For more info, see https://docs.pytest.org/en/8.2.x/reference/customize.html#pyproject-toml
+# e.g. uncomment the following line to enable verbose output
+# addopts = "-v"
+
+[tool.poetry.group.dev.dependencies]
+black = "23.11"
+ipython = "*"
+pytest = "*"
+pre-commit = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

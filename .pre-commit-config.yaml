@@ -1,0 +1,46 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+default_language_version:
+  python: python3.11
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: |
+          (?x)(.devcontainer/)
+      - id: check-merge-conflict
+  - repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+      - id: black
+        name: Check Python code (black auto-format)
+  - repo: https://github.com/PyCQA/flake8.git
+    rev: 6.0.0
+    hooks:
+      - id: flake8
+        # E501 - line lengths are controlled by Black
+        # E266 - Flake8 forbids comments with double pound-sign
+        # W503 - Flake8 (knowingly) breaks with Black and Pep8
+        # E712 - FLake8 dislikes it you do 'X == True' rather than 'X is True'... this is not sensible
+        # Max complexity relates to cyclomatic complexity and the flake8 error code is C901
+        args: ["--ignore=E501,E266,W503,E712", "--max-complexity=5"]
+        name: Check Python code (flake8 linting)
+        exclude: |
+          (?x)(
+              settings/(base|production|dev|test).py|
+              tests/|
+              migrations/|
+              cicd_scripts/
+          )
+  - repo: https://github.com/python-poetry/poetry
+    rev: '1.7.0'
+    hooks:
+      - id: poetry-check
+      - id: poetry-export
+        args: ["--with", "dev", "-f", "requirements.txt", "-o", "requirements.txt"]

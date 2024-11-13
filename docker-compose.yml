@@ -1,0 +1,34 @@
+services:
+  fur_hotspot_mutations:
+    container_name: fur_hotspot_mutations
+    user: admin
+    image: project:local
+    build:
+      context: ./
+      dockerfile: Dockerfile
+      target: development_only_stage
+      args:
+        # Images built with HAS_SUDO=1 will have sudo installed and a privileged
+        # user created. The CICD will set this to 0 to reduce the attack surface
+        # of the image, but during development, you may want to have sudo.
+        HAS_SUDO: "${HAS_SUDO:-1}"
+    restart: unless-stopped
+    ports:
+      - 8001
+    # You want the container to stay up forever while you're developing.
+    command: sleep infinity
+    volumes:
+      - type: bind
+        source: ./
+        target: /opt/repo/
+    networks:
+      - local-default
+
+networks:
+  local-default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1350
+    ipam:
+      config:
+        - subnet: 192.168.4.0/24
