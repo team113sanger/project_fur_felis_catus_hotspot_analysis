@@ -21,6 +21,11 @@ services:
       - type: bind
         source: ./
         target: /opt/repo/
+      - type: bind
+        source: /lustre/scratch124/bf14/
+        target: /lustre/scratch124/bf14/
+    environment:
+      TEST_MAF_DIR: "/lustre/scratch124/bf14/maf/"
     networks:
       - local-default
 
