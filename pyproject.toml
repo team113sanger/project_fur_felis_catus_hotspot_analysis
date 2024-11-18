@@ -12,6 +12,7 @@ python = "^3.11"
 # Needed to support python 3.7 and older, with regards to a single source of
 # truth for this packages versioning
 importlib-metadata = { version = "~=1.0", python = "<3.8" }
+pandas = "^2.2.3"
 
 [tool.poetry.plugins."console_scripts"]
 # Scripts are defined here, and are added by Python to the PATH when the package
