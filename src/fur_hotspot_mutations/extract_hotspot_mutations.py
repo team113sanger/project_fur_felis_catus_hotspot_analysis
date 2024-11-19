@@ -16,7 +16,11 @@ def setup_logging():
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Extract all hotspot mutations (i.e. mutations occurring at a hotspot site in > 2 samples) from a given MAF file. Outputs hotspot mutations to a new MAF file."
+        description=(
+            "Identify and extract hotspot mutations from a Mutation Annotation Format (MAF) file. "
+            "Hotspot mutations are defined as identical mutations occurring at the same site in more than N samples. "
+            "The extracted hotspot mutations are saved to a new MAF file."
+        )
     )
     parser.add_argument(
         "-i",
@@ -24,7 +28,18 @@ def parse_arguments():
         nargs=1,
         type=Path,
         required=True,
-        help="Path to input MAF file to extract hotspot mutations from.",
+        help="Path to the input MAF file from which hotspot mutations will be extracted.",
+    )
+    parser.add_argument(
+        "-m",
+        metavar="MIN_SAMPLES",
+        nargs=1,
+        type=int,
+        default=2,
+        help=(
+            "Minimum number of samples required for a mutation to be classified as a hotspot mutation. "
+            "Default value: 2."
+        ),
     )
     parser.add_argument(
         "-o",
@@ -32,13 +47,15 @@ def parse_arguments():
         nargs=1,
         type=Path,
         required=True,
-        help="Path to output MAF with hotspot mutations extracted from -i.",
+        help="Path to the output MAF file where extracted hotspot mutations will be saved.",
     )
 
     return parser.parse_args()
 
 
-def extract_hotspot_mutations(maf_file, output_maf=None, save_to_file=True):
+def extract_hotspot_mutations(
+    maf_file, min_samples=2, output_maf=None, save_to_file=True
+):
     """
     Extract mutations from a MAF file that meet the hotspot criteria:
     - Same gene
@@ -102,8 +119,11 @@ def extract_hotspot_mutations(maf_file, output_maf=None, save_to_file=True):
         .reset_index()
     )
 
-    # Filter for mutations occurring in at least two samples
-    hotspot_mutations = grouped[grouped["Tumor_Sample_Barcode"] >= 2]
+    # Filter for mutations occurring in at least the minimum number of samples
+    logging.info(
+        f"Identifying hotspot muations present in at least {min_samples} samples ..."
+    )
+    hotspot_mutations = grouped[grouped["Tumor_Sample_Barcode"] >= min_samples]
 
     # Merge with the original MAF to retain all details for hotspot mutations
     hotspot_maf = pd.merge(
@@ -146,14 +166,22 @@ def extract_hotspot_mutations(maf_file, output_maf=None, save_to_file=True):
 
 def main():
     # Parse command line arguments
+    logging.info("Parsing command line arguments ...")
     args = parse_arguments()
 
     input_maf = args.i[0]
+    min_samples = args.m[0]
     output_maf = args.o[0]
+
+    logging.debug(f"Input MAF: {input_maf}")
+    logging.debug(f"Minimum number of samples: {min_samples}")
+    logging.debug(f"Output MAF: {output_maf}")
 
     # Check if input file is in MAF format
     if is_maf_format(input_maf):
-        extract_hotspot_mutations(input_maf, output_maf)
+        extract_hotspot_mutations(
+            input_maf, min_samples=min_samples, output_maf=output_maf, save_to_file=True
+        )
     else:
         raise ValueError(
             f"{str(input_maf)} is not a valid MAF file. Please check input data."

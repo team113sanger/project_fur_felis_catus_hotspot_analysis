@@ -70,7 +70,9 @@ def test_extract_hotspot_mutations(mock_to_csv, mock_read_csv):
     mock_read_csv.return_value = mock_maf_data
 
     # Call the function
-    output = extract_hotspot_mutations("input_maf_file.maf", "output_maf_file.maf")
+    output = extract_hotspot_mutations(
+        "input_maf_file.maf", output_maf="output_maf_file.maf"
+    )
 
     # Assert pd.read_csv was called correctly
     mock_read_csv.assert_called_once_with(
@@ -120,7 +122,7 @@ def test_no_hotspot_mutations():
 
     with patch("pandas.read_csv", return_value=mock_data):
         output = extract_hotspot_mutations(
-            "input_maf_file.maf", "output_maf_file.maf", save_to_file=False
+            "input_maf_file.maf", output_maf="output_maf_file.maf", save_to_file=False
         )
 
         # Output should be an empty DataFrame
@@ -159,7 +161,7 @@ def test_duplicate_sample_barcodes():
 
     with patch("pandas.read_csv", return_value=mock_data):
         output = extract_hotspot_mutations(
-            "input_maf_file.maf", "output_maf_file.maf", save_to_file=False
+            "input_maf_file.maf", output_maf="output_maf_file.maf", save_to_file=False
         )
 
         # Check that the output is not empty
@@ -181,3 +183,98 @@ def test_duplicate_sample_barcodes():
 
         # Ensure all rows in the output correspond to valid hotspots (deduplicated)
         assert len(output) == 4  # 2 for TP53 (deduplicated), 2 for EGFR
+
+
+def test_min_samples_filtering():
+    # Mock MAF data with varying sample counts
+    mock_data = pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53", "TP53", "TP53", "BRCA1", "BRCA1", "EGFR", "EGFR"],
+            "Chromosome": ["17", "17", "17", "17", "17", "7", "7"],
+            "Start_Position": [
+                7574000,
+                7574000,
+                7574000,
+                43045629,
+                43045629,
+                55249071,
+                55249071,
+            ],
+            "End_Position": [
+                7574001,
+                7574001,
+                7574001,
+                43045630,
+                43045630,
+                55249072,
+                55249072,
+            ],
+            "Reference_Allele": ["C", "C", "C", "A", "A", "G", "G"],
+            "Tumor_Seq_Allele2": ["T", "T", "T", "T", "T", "A", "A"],
+            "Tumor_Sample_Barcode": [
+                "Sample1",
+                "Sample2",
+                "Sample3",  # TP53: 3 samples
+                "Sample1",
+                "Sample2",  # BRCA1: 2 samples
+                "Sample1",
+                "Sample2",  # EGFR: 2 samples
+            ],
+        }
+    )
+
+    with patch("pandas.read_csv", return_value=mock_data):
+        # Test with min_samples=3 (only TP53 should be included)
+        output_3 = extract_hotspot_mutations(
+            "input_maf_file.maf", min_samples=3, save_to_file=False
+        )
+        assert set(output_3["Hugo_Symbol"].unique()) == {"TP53"}  # Only TP53 qualifies
+
+        # Test with min_samples=2 (TP53, BRCA1, and EGFR should be included)
+        output_2 = extract_hotspot_mutations(
+            "input_maf_file.maf", min_samples=2, save_to_file=False
+        )
+        assert set(output_2["Hugo_Symbol"].unique()) == {"TP53", "BRCA1", "EGFR"}
+
+        # Test with min_samples=4 (no mutations qualify)
+        output_4 = extract_hotspot_mutations(
+            "input_maf_file.maf", min_samples=4, save_to_file=False
+        )
+        assert output_4.empty  # No mutation meets the criteria
+
+
+def test_save_to_file_false():
+    # Mock MAF data
+    mock_data = pd.DataFrame(
+        {
+            "Hugo_Symbol": ["TP53", "TP53", "BRCA1", "BRCA1", "EGFR"],
+            "Chromosome": ["17", "17", "17", "17", "7"],
+            "Start_Position": [7574000, 7574000, 43045629, 43045629, 55249071],
+            "End_Position": [7574001, 7574001, 43045630, 43045630, 55249072],
+            "Reference_Allele": ["C", "C", "A", "A", "G"],
+            "Tumor_Seq_Allele2": ["T", "T", "T", "T", "A"],
+            "Tumor_Sample_Barcode": [
+                "Sample1",
+                "Sample2",  # TP53: 2 samples
+                "Sample1",
+                "Sample2",  # BRCA1: 2 samples
+                "Sample1",  # EGFR: 1 sample
+            ],
+        }
+    )
+
+    with patch("pandas.read_csv", return_value=mock_data):
+        with patch("pandas.DataFrame.to_csv") as mock_to_csv:
+            # Call the function with save_to_file=False
+            output = extract_hotspot_mutations(
+                "input_maf_file.maf", min_samples=2, save_to_file=False
+            )
+
+            # Assert that to_csv was NOT called
+            mock_to_csv.assert_not_called()
+
+            # Validate the output DataFrame
+            expected_output = mock_data[
+                mock_data["Hugo_Symbol"].isin(["TP53", "BRCA1"])
+            ]
+            pd.testing.assert_frame_equal(output, expected_output)
