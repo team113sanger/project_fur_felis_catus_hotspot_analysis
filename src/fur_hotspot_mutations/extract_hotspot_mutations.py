@@ -35,7 +35,7 @@ def parse_arguments():
         metavar="MIN_SAMPLES",
         nargs=1,
         type=int,
-        default=2,
+        default=[2],
         help=(
             "Minimum number of samples required for a mutation to be classified as a hotspot mutation. "
             "Default value: 2."
