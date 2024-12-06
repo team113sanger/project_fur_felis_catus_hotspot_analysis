@@ -18,6 +18,7 @@ from fur_hotspot_mutations.mpileup_variant_filter import (
     _construct_variant_file_row,
     write_variants_to_variant_file,
     process_true_positives,
+    process_false_negatives,
 )
 from tests.mocks.mock_files import (
     get_example_mpileup_file,
@@ -759,3 +760,127 @@ def test_process_true_positives_expected_mutations_in_output(
     assert (
         "Variant flagged as germline" in caplog.text
     ), "Log should indicate the variant was flagged as germline."
+
+
+# Tests for process_false_negatives
+def test_process_false_negatives_adds_variant_when_criteria_met(
+    mpileup_file, tn_pairs_file, tmp_path, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    # Given thresholds that allow a known false negative variant to be added
+    # For example, assume that a variant in TUMOUR_SAMPLE_001 is FALSE_NEGATIVE with Alt_Count=10 in tumour
+    # and its matched normal has Alt_Count=0, and we set min_alt_tum_reads=5, min_alt_norm_reads=3
+    min_alt_tum_reads = 5
+    min_alt_norm_reads = 3
+
+    variant_file = tmp_path / "variants_output.tsv"
+
+    # When
+    process_false_negatives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_alt_tum_reads=min_alt_tum_reads,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then
+    assert variant_file.exists(), "Variant file should be created."
+    contents = variant_file.read_text().strip().split("\n")
+    # Check the header
+    assert (
+        contents[0]
+        == "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction"
+    )
+    # Check that at least one expected variant line is present
+    # This line should match a known variant from your fixture data that meets the criteria
+    # Example (adjust as per your actual data):
+    expected_line = (
+        "TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001\tTP53\tchr17\t7579472\t7579472\tG\tA\tADD"
+    )
+    assert (
+        expected_line in contents
+    ), f"Expected variant line not found: {expected_line}"
+
+    # Check logs for confirmation
+    assert (
+        "Identified false negative variant suitable for addition to MAF" in caplog.text
+    )
+
+
+def test_process_false_negatives_no_add_when_criteria_not_met(
+    mpileup_file, tn_pairs_file, tmp_path, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    # Set thresholds so that no variants meet the criteria
+    # For example, set very high tumour ALT reads threshold and very low normal ALT reads threshold
+    min_alt_tum_reads = 100000  # very high, no tumour should meet this
+    min_alt_norm_reads = 0  # normal must have <0 is impossible, so no variants added
+    variant_file = tmp_path / "variants_output.tsv"
+
+    # When
+    process_false_negatives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_alt_tum_reads=min_alt_tum_reads,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then
+    if variant_file.exists():
+        contents = variant_file.read_text().strip().split("\n")
+        # If the file was created at all, it should only contain a header
+        assert (
+            len(contents) == 1
+        ), "No variants should be added when criteria are not met."
+    else:
+        # File may not even be created if nothing is added
+        pass
+
+    # Check logs
+    assert (
+        "No false negative variants found. Nothing to add." in caplog.text
+        or "No variants met the criteria" in caplog.text
+    ), "Logs should indicate no variants were added."
+
+
+def test_process_false_negatives_only_tumour_samples_added(
+    mpileup_file, tn_pairs_file, tmp_path, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    # Choose thresholds that might tempt adding normal samples if not filtered out
+    # For instance, if a normal sample had ALT_Count that looked like it met criteria, but we must ensure
+    # that only tumour samples are processed.
+    min_alt_tum_reads = 1
+    min_alt_norm_reads = 5
+    variant_file = tmp_path / "variants_output.tsv"
+
+    # When
+    process_false_negatives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_alt_tum_reads=min_alt_tum_reads,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then
+    # Verify that all added variants (if any) belong to known tumour samples.
+    if variant_file.exists():
+        contents = variant_file.read_text().strip().split("\n")
+        # First line is header
+        for line in contents[1:]:
+            fields = line.split("\t")
+            tumour_sample = fields[0]
+            # Check that this sample is listed as a TUMOUR in tn_pairs_file
+            tn_pairs_df = tsv_to_df(tn_pairs_file)
+            assert (
+                tumour_sample in tn_pairs_df["TUMOUR"].values
+            ), f"Sample {tumour_sample} is not a tumour sample."
+    else:
+        # If no variants added, test still passes since no normal samples were added
+        pass

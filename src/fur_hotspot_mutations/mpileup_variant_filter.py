@@ -566,7 +566,7 @@ def _process_germline_variants(
 ):
     true_pos_df = extract_true_positives_from_mpileup_df(mpileup_df)
     logging.info(
-        "Iterating through true positive variants to check for potential germline ..."
+        "Iterating through true positive variants to check for potential germline (and removal from MAF) ..."
     )
 
     germline_rows = []
@@ -601,7 +601,7 @@ def _process_germline_variants(
         if germline_tn_pair_count >= min_germline_tn_pairs:
             logging.info(
                 f"Variant flagged as germline (normal samples in {germline_tn_pair_count} tumour-normal pairs "
-                f"have > {min_alt_norm_reads} ALT reads)."
+                f"have > {min_alt_norm_reads} ALT reads). Will be removed from MAF"
             )
             germline_rows.append(row)
         else:
@@ -634,12 +634,181 @@ def process_true_positives(
     )
 
 
+# Functions for processing false negative variants
+def _process_single_variant(
+    variant: pd.Series,
+    mpileup_df: pd.DataFrame,
+    tn_pairs: dict,
+    min_alt_tum_reads: int,
+    min_alt_norm_reads: int,
+    variant_file: Path,
+    tumour_samples: set,
+) -> bool:
+    """
+    Processes a single false negative variant to determine if it meets the criteria for addition to the MAF file.
+
+    Parameters:
+        variant (pd.Series): A row from the false negative variants DataFrame.
+        mpileup_df (pd.DataFrame): The mpileup DataFrame containing variant information.
+        tn_pairs (dict): Dictionary mapping tumour-normal pairs.
+        min_alt_tum_reads (int): Minimum ALT reads threshold in tumour samples.
+        min_alt_norm_reads (int): Maximum ALT reads threshold in normal samples.
+        variant_file (Path): Path to the output variant file.
+        tumour_samples (set): Set of tumour sample IDs for quick lookup.
+
+    Returns:
+        bool: True if the variant was added to the MAF file, False otherwise.
+
+    Raises:
+        ValueError: If variant data for the tumour-normal pair is missing.
+    """
+    tumour_sample = variant["Tumor_Sample_Barcode"]
+
+    # Ensure we're only processing tumour samples
+    if tumour_sample not in tumour_samples:
+        return False
+
+    # Get the matched normal sample
+    normal_sample = _get_matched_normal(tumour_sample, tn_pairs)
+
+    # Define common filter conditions
+    filter_conditions = (
+        (mpileup_df["Hugo_Symbol"] == variant["Hugo_Symbol"])
+        & (mpileup_df["Chromosome"] == variant["Chromosome"])
+        & (mpileup_df["Start_Position"] == variant["Start_Position"])
+        & (mpileup_df["End_Position"] == variant["End_Position"])
+        & (mpileup_df["Reference_Allele"] == variant["Reference_Allele"])
+        & (mpileup_df["Tumour_Seq_Allele2"] == variant["Tumour_Seq_Allele2"])
+    )
+
+    # Retrieve variant data for the tumour sample
+    tum_variant = mpileup_df[
+        (mpileup_df["Tumor_Sample_Barcode"] == tumour_sample) & filter_conditions
+    ]
+
+    # Retrieve variant data for the normal sample
+    norm_variant = mpileup_df[
+        (mpileup_df["Tumor_Sample_Barcode"] == normal_sample) & filter_conditions
+    ]
+
+    if tum_variant.empty or norm_variant.empty:
+        raise ValueError(
+            f"Missing variant data for tumour-normal pair: {tumour_sample}-{normal_sample}."
+        )
+
+    # Count the ALT reads in the tumour and the normal
+    alt_count_tumour = tum_variant["Alt_Count"].values[0]
+    alt_count_normal = norm_variant["Alt_Count"].values[0]
+
+    # Apply the criteria
+    if alt_count_tumour > min_alt_tum_reads and alt_count_normal < min_alt_norm_reads:
+        logging.info(
+            f"Identified false negative variant suitable for addition to MAF: "
+            f"{variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
+            f"in tumour {tumour_sample} (# of tumour ALT reads: {alt_count_tumour}, "
+            f"# of normal ALT reads: {alt_count_normal})."
+        )
+        write_variants_to_variant_file(
+            variant_row=tum_variant.iloc[0],
+            tn_pairs=tn_pairs,
+            add_to_maf=True,
+            variant_file=variant_file,
+        )
+        return True
+
+    return False
+
+
+def _process_fn_variants(
+    mpileup_df: pd.DataFrame,
+    tn_pairs: dict,
+    min_alt_tum_reads: int,
+    min_alt_norm_reads: int,
+    variant_file: Path,
+) -> None:
+    """
+    Processes false negative variants to identify those suitable for addition to the MAF file.
+
+    Criteria:
+    - Variant is marked as FALSE_NEGATIVE in a tumour sample.
+    - Tumour sample's Alt_Count > min_alt_tum_reads.
+    - Matched normal sample's Alt_Count < min_alt_norm_reads.
+
+    Parameters:
+        mpileup_df (pd.DataFrame): The mpileup DataFrame containing variant information.
+        tn_pairs (dict): Dictionary mapping tumour-normal pairs.
+        min_alt_tum_reads (int): Minimum ALT reads threshold in tumour samples.
+        min_alt_norm_reads (int): Maximum ALT reads threshold in normal samples.
+        variant_file (Path): Path to the output variant file.
+    """
+    logging.info("Processing false negative variants for potential addition to MAF...")
+
+    # Extract all false negative variants
+    false_neg_df = extract_false_negatives_from_mpileup_df(mpileup_df)
+
+    if false_neg_df.empty:
+        logging.info("No false negative variants found. Nothing to add.")
+        return
+
+    # Extract all tumour sample IDs for quick lookup
+    tumour_samples = {pair["TUMOUR"] for pair in tn_pairs.values()}
+
+    variants_added = 0  # Counter for added variants
+
+    for _, variant in false_neg_df.iterrows():
+        added = _process_single_variant(
+            variant=variant,
+            mpileup_df=mpileup_df,
+            tn_pairs=tn_pairs,
+            min_alt_tum_reads=min_alt_tum_reads,
+            min_alt_norm_reads=min_alt_norm_reads,
+            variant_file=variant_file,
+            tumour_samples=tumour_samples,
+        )
+        if added:
+            variants_added += 1
+
+    if variants_added == 0:
+        logging.info("No variants met the criteria for addition to MAF.")
+    else:
+        logging.info(f"Total variants added to MAF: {variants_added}")
+
+
+def process_false_negatives(
+    mpileup_file: Path,
+    tn_pairs_file: Path,
+    min_alt_tum_reads: int,
+    min_alt_norm_reads: int,
+    variant_file: Path,
+):
+    """
+    High-level function to load data and processes false negative tumour variants to check if they meet the criteria for being added to the MAF file
+    Args:
+        mpileup_file (Path): Path to the mpileup file
+        tn_pairs_file (Path): Path to the tumour-normal pairs file
+        min_alt_tum_reads (int): Minimum number of ALT reads in the tumour to flag a variant as likely somatic
+        min_alt_norm_reads (int): Minimum number of ALT reads in the matched normal to flag a variant as likely germline
+        variant_file (Path): Output file to which variants that meet the criteria will be written
+    """
+    logging.info(
+        f"Checking false negative variants in {str(mpileup_file)} for possible addition to MAF file ..."
+    )
+
+    mpileup_df = _load_and_validate_mpileup(mpileup_file)
+    tn_pairs_df = _load_and_validate_tn_pairs(tn_pairs_file)
+    tn_pairs = _validate_samples(mpileup_df, tn_pairs_df)
+
+    _process_fn_variants(
+        mpileup_df, tn_pairs, min_alt_tum_reads, min_alt_norm_reads, variant_file
+    )
+
+
 def main():
     args = parse_arguments()
     mpileup_file = args.mpileup_file
     tn_pairs_file = args.tn_pairs_file
     variant_file = args.variant_file
-    # min_alt_tum_reads = args.alt_tumour_reads
+    min_alt_tum_reads = args.alt_tumour_reads
     min_alt_norm_reads = args.alt_normal_reads
     min_germline_tn_pairs = args.germline_tn_pairs
     logging_level = args.log_level
@@ -654,6 +823,10 @@ def main():
         min_germline_tn_pairs,
         min_alt_norm_reads,
         variant_file,
+    )
+
+    process_false_negatives(
+        mpileup_file, tn_pairs_file, min_alt_tum_reads, min_alt_norm_reads, variant_file
     )
 
 
