@@ -2,6 +2,7 @@ import argparse
 import csv
 import logging
 from pathlib import Path
+from typing import Union
 
 import pandas as pd
 
@@ -75,7 +76,7 @@ def parse_arguments():
         type=int,
         default=3,
         help="Threshold for the minimum number of tumour-normal pairs flagged as false negatives by mpileup to classify the true positive variants as germline "
-        "i.e. with the default value of 5, if >5 tumour-normal pairs are flagged as false negative then report the true positive variant as a false positive.",
+        "i.e. with the default value of 3, if >3 tumour-normal pairs are flagged as false negative then report the true positive variant as a false positive.",
     )
 
     parser.add_argument(
@@ -211,6 +212,11 @@ def _validate_tn_pairs_file(tn_pairs_file: Path):
         raise
 
 
+def _load_and_validate_tn_pairs(tn_pairs_file: Path) -> pd.DataFrame:
+    _validate_tn_pairs_file(tn_pairs_file)
+    return tsv_to_df(tn_pairs_file)
+
+
 def _check_tn_pairs(mpileup_df: pd.DataFrame, tn_pairs_df: pd.DataFrame):
     """
     Checks if the tumor and normal samples in the tumor-normal pair DataFrame match
@@ -273,6 +279,11 @@ def _extract_tn_pairs_from_df(tn_pairs_df: pd.DataFrame) -> dict:
     return tn_pairs
 
 
+def _validate_samples(mpileup_df: pd.DataFrame, tn_pairs_df: pd.DataFrame) -> dict:
+    _check_tn_pairs(mpileup_df, tn_pairs_df)
+    return _extract_tn_pairs_from_df(tn_pairs_df)
+
+
 # Functions for processing mpileup file
 def _validate_mpileup_file(mpileup_file: Path):
     """
@@ -292,6 +303,11 @@ def _validate_mpileup_file(mpileup_file: Path):
     except Exception as e:
         logging.error(f"Error validating mpileup file: {e}")
         raise
+
+
+def _load_and_validate_mpileup(mpileup_file: Path) -> pd.DataFrame:
+    _validate_mpileup_file(mpileup_file)
+    return tsv_to_df(mpileup_file)
 
 
 def _extract_matching_variant_rows(row: pd.Series, mpileup_df: pd.DataFrame):
@@ -364,6 +380,100 @@ def extract_true_positives_from_mpileup_df(mpileup_df: pd.DataFrame) -> pd.DataF
     return true_pos_df
 
 
+# Functions for writing variants to the output variant file
+def _get_matched_normal(tumour_sample: str, tn_pairs: dict) -> str:
+    normal_sample = None
+
+    for pair_id, samples in tn_pairs.items():
+        if samples["TUMOUR"] == tumour_sample:
+            normal_sample = samples["NORMAL"]
+            break
+
+    if not normal_sample:
+        raise ValueError(
+            f"Error when extracting matched normal for {tumour_sample}. Either tumour sample not in T/N pairs or T/N pairs are empty."
+        )
+
+    return normal_sample
+
+
+def _convert_chromosome_to_string(chromosome: Union[int, str]) -> str:
+    # Chromosome cannot be empty, raise an error if so
+    is_empty_string = isinstance(chromosome, str) and chromosome.strip() == ""
+    if chromosome is None or is_empty_string:
+        raise ValueError(
+            "Value for chromosome is empty. Check input data. Requires a non-empty string or an integer."
+        )
+
+    # Convert any chromosomes that are integers (e.g. 17) to strings
+    if isinstance(chromosome, int):
+        as_string = str(chromosome)
+        return as_string
+
+    # If chromosome is already a string, return it
+    return chromosome
+
+
+def _construct_variant_file_row(
+    variant_row: pd.Series, tn_pairs: dict, add_to_maf: bool
+) -> str:
+    # Populate the values for the new variant file row using information from the mpileup row
+    try:
+        tumour = variant_row["Tumor_Sample_Barcode"]
+        # Get the ID of the matched normal
+        normal = _get_matched_normal(tumour, tn_pairs)
+        hugo_symbol = variant_row["Hugo_Symbol"]
+        # If needed, convert the chromosome value to a string
+        chrom = _convert_chromosome_to_string(variant_row["Chromosome"])
+        start_pos = variant_row["Start_Position"]
+        end_pos = variant_row["End_Position"]
+        ref_allele = variant_row["Reference_Allele"]
+        alt_allele = variant_row["Tumour_Seq_Allele2"]
+        action = "ADD" if add_to_maf else "REMOVE"
+    except KeyError:
+        raise ValueError(
+            f"Variant row is missing one or more fields. Please check input data: {variant_row}"
+        )
+
+    # Construct the new variant file row
+    new_variant_file_row = (
+        "\t".join(
+            [
+                tumour,
+                normal,
+                hugo_symbol,
+                chrom,
+                str(start_pos),
+                str(end_pos),
+                ref_allele,
+                alt_allele,
+                action,
+            ]
+        )
+        + "\n"
+    )
+
+    return new_variant_file_row
+
+
+def write_variants_to_variant_file(
+    variant_row: pd.Series, tn_pairs: dict, add_to_maf: bool, variant_file: Path
+) -> None:
+    # If the variant file does not exist or is empty, write the expected header to the variant file path
+    if not variant_file.exists() or variant_file.stat().st_size == 0:
+        with open(variant_file, "w") as file:
+            header = "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction\n"
+            file.write(header)
+
+    new_row = _construct_variant_file_row(variant_row, tn_pairs, add_to_maf)
+
+    with open(variant_file, "r") as file:
+        existing_rows = set(file.readlines())
+    if new_row not in existing_rows:
+        with open(variant_file, "a") as file:
+            file.write(new_row)
+
+
 # Functions for processing true positive variants
 def _pair_is_present(
     sample_ids_in_df: set, tumour_sample_id: str, normal_sample_id: str
@@ -410,74 +520,127 @@ def _count_tn_pairs(df: pd.DataFrame, tn_pairs_dict: dict) -> int:
     return pair_count
 
 
-def process_true_positives(
-    mpileup_file: Path, tn_pairs_file: Path, min_germline_tn_pairs: int
-):
+def _count_alt_reads_in_normals(
+    variant_rows_df: pd.DataFrame, tn_pairs: dict, min_alt_norm_reads: int
+) -> int:
     """
-    Processes true positive variants from the mpileup file to identify potential germline variants.
+    Counts the number of tumour-normal pairs where the normal sample has more than min_alt_norm_reads ALT reads.
 
     Parameters:
-        mpileup_file (Path): The path to the mpileup file.
-        tn_pairs_file (Path): The path to the tumour-normal pairs file.
-        min_germline_tn_pairs (int): The minimum number of tumour-normal pairs flagged as false negatives
-                                     to classify the true positive variant as germline.
+        variant_rows_df (pd.DataFrame): DataFrame containing rows for a specific variant across all samples.
+        tn_pairs (dict): Dictionary of tumour-normal pairs.
+        min_alt_norm_reads (int): Minimum number of ALT reads in the normal sample to consider a a tumour-normal pair as germline.
+
+    Returns:
+        int: Number of tumour-normal pairs meeting the criterion.
     """
-    # Load in mpileup file data
-    logging.info(
-        f"Checking true positive variants in {str(mpileup_file)} for potential germline variants ..."
-    )
-    _validate_mpileup_file(mpileup_file)
-    mpileup_df = tsv_to_df(mpileup_file)
+    count = 0
 
-    # Load in tumour-normal pairs file
-    _validate_tn_pairs_file(tn_pairs_file)
-    tn_pairs_df = tsv_to_df(tn_pairs_file)
+    for pair_id, samples in tn_pairs.items():
+        normal_sample_id = samples["NORMAL"]
 
-    # Ensure samples match between the mpileup file and the tn pairs file
-    _check_tn_pairs(mpileup_df, tn_pairs_df)
+        # Get the normal sample row for this variant
+        normal_sample_row = variant_rows_df[
+            variant_rows_df["Tumor_Sample_Barcode"] == normal_sample_id
+        ]
 
-    # Get a dictionary containing the tumour-normal pairs
-    tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
+        if not normal_sample_row.empty:
+            alt_count = normal_sample_row["Alt_Count"].values[0]
+            logging.debug(
+                f"Normal sample {normal_sample_id} has {alt_count} ALT reads at this position"
+            )
+            if alt_count > min_alt_norm_reads:
+                count += 1
 
-    # Extract true positive variants from mpileup file
+    logging.info(f"Detected {count} germline tumour-normal pairs at this postion.")
+
+    return count
+
+
+def _process_germline_variants(
+    mpileup_df: pd.DataFrame,
+    tn_pairs: dict,
+    min_germline_tn_pairs: int,
+    min_alt_norm_reads: int,
+    variant_file: Path,
+):
     true_pos_df = extract_true_positives_from_mpileup_df(mpileup_df)
-
-    # Check for potential germline variants in the true positives
     logging.info(
         "Iterating through true positive variants to check for potential germline ..."
     )
+
+    germline_rows = []
+
     for _, row in true_pos_df.iterrows():
         logging.info(
-            f"Processing {row['Hugo_Symbol']} variant at position {row['Chromosome']}:{row['Start_Position']} in sample {row['Tumor_Sample_Barcode']} ..."
+            f"Processing {row['Hugo_Symbol']} variant at position {row['Chromosome']}:{row['Start_Position']} "
+            f"in sample {row['Tumor_Sample_Barcode']} ..."
         )
-        # Create a filtered dataframe containing only this variant across all samples
         matching_variant_rows_df = _extract_matching_variant_rows(row, mpileup_df)
         false_neg_variant_rows = matching_variant_rows_df[
             matching_variant_rows_df["Status"] == "FALSE_NEGATIVE"
         ]
 
-        # Count the number of tumour-normal pairs with false negative mutations
         false_neg_tn_pair_count = _count_tn_pairs(false_neg_variant_rows, tn_pairs)
         logging.debug(
             f"Detected {false_neg_tn_pair_count} tumour-normal pairs with false negative mutations."
         )
 
-        # Check if this variant satisfies our threshold
-        if false_neg_tn_pair_count >= min_germline_tn_pairs:
-            logging.info(
-                f"Identified potential germline variant ({false_neg_tn_pair_count} out of {len(tn_pairs)} tumour-normal pairs have a false negative variant). Performing further checks ..."
-            )
+        if false_neg_tn_pair_count < min_germline_tn_pairs:
+            logging.info("Variant likely somatic based on initial criteria.")
+            continue
 
+        logging.info(
+            f"Identified potential germline variant ({false_neg_tn_pair_count} out of {len(tn_pairs)} "
+            "tumour-normal pairs have a false negative variant). Performing further checks ..."
+        )
+        germline_tn_pair_count = _count_alt_reads_in_normals(
+            matching_variant_rows_df, tn_pairs, min_alt_norm_reads
+        )
+
+        if germline_tn_pair_count >= min_germline_tn_pairs:
+            logging.info(
+                f"Variant flagged as germline (normal samples in {germline_tn_pair_count} tumour-normal pairs "
+                f"have > {min_alt_norm_reads} ALT reads)."
+            )
+            germline_rows.append(row)
         else:
-            logging.info("Successfully processed variant - likely not germline.")
+            logging.info("Variant likely somatic after additional checks.")
+
+    for germline_row in germline_rows:
+        write_variants_to_variant_file(
+            variant_row=germline_row,
+            tn_pairs=tn_pairs,
+            add_to_maf=False,
+            variant_file=variant_file,
+        )
+
+
+def process_true_positives(
+    mpileup_file: Path,
+    tn_pairs_file: Path,
+    min_germline_tn_pairs: int,
+    min_alt_norm_reads: int,
+    variant_file: Path,
+):
+    logging.info(
+        f"Checking true positive variants in {str(mpileup_file)} for potential germline variants ..."
+    )
+    mpileup_df = _load_and_validate_mpileup(mpileup_file)
+    tn_pairs_df = _load_and_validate_tn_pairs(tn_pairs_file)
+    tn_pairs = _validate_samples(mpileup_df, tn_pairs_df)
+    _process_germline_variants(
+        mpileup_df, tn_pairs, min_germline_tn_pairs, min_alt_norm_reads, variant_file
+    )
 
 
 def main():
     args = parse_arguments()
     mpileup_file = args.mpileup_file
     tn_pairs_file = args.tn_pairs_file
+    variant_file = args.variant_file
     # min_alt_tum_reads = args.alt_tumour_reads
-    # min_alt_norm_reads = args.alt_normal_reads
+    min_alt_norm_reads = args.alt_normal_reads
     min_germline_tn_pairs = args.germline_tn_pairs
     logging_level = args.log_level
 
@@ -485,7 +648,13 @@ def main():
     setup_logging(logging_level)
 
     # Process true positive variants and check if they are likely germline
-    process_true_positives(mpileup_file, tn_pairs_file, min_germline_tn_pairs)
+    process_true_positives(
+        mpileup_file,
+        tn_pairs_file,
+        min_germline_tn_pairs,
+        min_alt_norm_reads,
+        variant_file,
+    )
 
 
 if __name__ == "__main__":

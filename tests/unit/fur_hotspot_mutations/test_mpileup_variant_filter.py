@@ -12,6 +12,12 @@ from fur_hotspot_mutations.mpileup_variant_filter import (
     _check_tn_pairs,
     _extract_tn_pairs_from_df,
     _count_tn_pairs,
+    _count_alt_reads_in_normals,
+    _get_matched_normal,
+    _convert_chromosome_to_string,
+    _construct_variant_file_row,
+    write_variants_to_variant_file,
+    process_true_positives,
 )
 from tests.mocks.mock_files import (
     get_example_mpileup_file,
@@ -271,7 +277,6 @@ def test_extract_tn_pairs_from_df_valid_data(tn_pairs_df):
             "TUMOUR": "TUMOUR_SAMPLE_003",
             "NORMAL": "NORMAL_SAMPLE_003",
         },
-        # Add other expected pairs as needed
     }
 
     # When
@@ -316,3 +321,441 @@ def test_count_tn_pairs_no_pairs(mpileup_df, tn_pairs_df):
 
     # Then
     assert pair_count == 0
+
+
+# Tests for _count_alt_reads_in_normals
+
+
+def test_count_alt_reads_in_normals():
+    # Sample variant rows DataFrame
+    data = {
+        "Hugo_Symbol": ["TP53", "TP53", "TP53", "TP53", "TP53", "TP53"],
+        "Chromosome": ["chr17", "chr17", "chr17", "chr17", "chr17", "chr17"],
+        "Start_Position": [7579472, 7579472, 7579472, 7579472, 7579472, 7579472],
+        "Tumor_Sample_Barcode": [
+            "TUMOUR_SAMPLE_1",
+            "NORMAL_SAMPLE_1",
+            "TUMOUR_SAMPLE_2",
+            "NORMAL_SAMPLE_2",
+            "TUMOUR_SAMPLE_3",
+            "NORMAL_SAMPLE_3",
+        ],
+        "Alt_Count": [10, 5, 8, 2, 15, 4],
+        "Status": [
+            "FALSE_NEGATIVE",
+            "TRUE_NEGATIVE",
+            "FALSE_NEGATIVE",
+            "TRUE_NEGATIVE",
+            "FALSE_NEGATIVE",
+            "TRUE_NEGATIVE",
+        ],
+    }
+    variant_rows_df = pd.DataFrame(data)
+
+    # Sample tumor-normal pairs
+    tn_pairs = {
+        "PAIR_1": {"TUMOUR": "TUMOUR_SAMPLE_1", "NORMAL": "NORMAL_SAMPLE_1"},
+        "PAIR_2": {"TUMOUR": "TUMOUR_SAMPLE_2", "NORMAL": "NORMAL_SAMPLE_2"},
+        "PAIR_3": {"TUMOUR": "TUMOUR_SAMPLE_3", "NORMAL": "NORMAL_SAMPLE_3"},
+    }
+
+    # Set the minimum ALT reads threshold
+    min_alt_norm_reads = 3
+
+    # Expected count:
+    # NORMAL_SAMPLE_1 has Alt_Count = 5 (>3) --> counts
+    # NORMAL_SAMPLE_2 has Alt_Count = 2 (<=3) --> does not count
+    # NORMAL_SAMPLE_3 has Alt_Count = 4 (>3) --> counts
+    # Expected count = 2
+
+    # Call the function
+    count = _count_alt_reads_in_normals(variant_rows_df, tn_pairs, min_alt_norm_reads)
+
+    # Assert the expected count
+    assert count == 2, f"Expected count of 2, but got {count}"
+
+
+# Tests for _get_matched_normal
+
+
+def test_get_matched_normal_found(tn_pairs_df):
+    tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
+
+    tumor_sample = "TUMOUR_SAMPLE_001"
+    expected_normal = "NORMAL_SAMPLE_001"
+    assert _get_matched_normal(tumor_sample, tn_pairs) == expected_normal
+
+
+def test_get_matched_normal_not_found(tn_pairs_df):
+    tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
+
+    tumor_sample = "NotASample"  # This tumor sample does not exist in the pairs
+    with pytest.raises(ValueError, match="Error when extracting matched normal"):
+        _get_matched_normal(tumor_sample, tn_pairs)
+
+
+def test_get_matched_normal_empty_dict():
+    tumor_sample = "TumorA"
+    tn_pairs = {}  # Empty dictionary
+    with pytest.raises(ValueError, match="Error when extracting matched normal"):
+        _get_matched_normal(tumor_sample, tn_pairs)
+
+
+# Tests for _convert_chromosome_to_string
+def test_convert_chromosome_to_string():
+    # Test with integer input
+    assert _convert_chromosome_to_string(1) == "1"
+    assert _convert_chromosome_to_string(23) == "23"
+
+    # Test with string input
+    assert _convert_chromosome_to_string("X") == "X"
+    assert _convert_chromosome_to_string("Y") == "Y"
+
+    # Test with edge cases
+    with pytest.raises(ValueError, match="Value for chromosome is empty."):
+        _convert_chromosome_to_string("")
+
+
+# Tests for _construct_variant_file_row
+def test_construct_variant_file_row(tn_pairs_df):
+    # Given
+    variant_row = pd.Series(
+        {
+            "Tumor_Sample_Barcode": "TUMOUR_SAMPLE_001",
+            "Hugo_Symbol": "TP53",
+            "Chromosome": 17,
+            "Start_Position": 100000,
+            "End_Position": 200000,
+            "Reference_Allele": "C",
+            "Tumour_Seq_Allele2": "T",
+        }
+    )
+    tn_pairs = {
+        "TUMOUR_SAMPLE_001_tNORMAL_SAMPLE_001": {
+            "TUMOUR": "TUMOUR_SAMPLE_001",
+            "NORMAL": "NORMAL_SAMPLE_001",
+        }
+    }
+    add_to_maf = True
+
+    expected_row = (
+        "TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001\tTP53\t17\t100000\t200000\tC\tT\tADD\n"
+    )
+
+    # When
+    result_row = _construct_variant_file_row(variant_row, tn_pairs, add_to_maf)
+
+    # Then
+    assert result_row == expected_row
+
+
+# Test with missing field
+def test_construct_variant_file_row_missing_field(tn_pairs_df):
+    # Given
+    variant_row = pd.Series(
+        {
+            "Tumor_Sample_Barcode": "TUMOUR_SAMPLE_001",
+            "Hugo_Symbol": "TP53",
+            "Chromosome": 17,
+            "Start_Position": 100000,
+            "End_Position": 200000,
+            "Reference_Allele": "C"
+            #'Tumour_Seq_Allele2': 'T'
+        }
+    )
+    tn_pairs = {
+        "TUMOUR_SAMPLE_001_tNORMAL_SAMPLE_001": {
+            "TUMOUR": "TUMOUR_SAMPLE_001",
+            "NORMAL": "NORMAL_SAMPLE_001",
+        }
+    }
+    add_to_maf = True
+
+    # When and Then
+    with pytest.raises(ValueError, match="Variant row is missing one or more fields"):
+        _construct_variant_file_row(variant_row, tn_pairs, add_to_maf)
+
+
+def test_write_variants_to_variant_file(tmp_path):
+    # Given
+    variant_file = tmp_path / "variants_output.tsv"
+
+    # A single variant row with required fields
+    variant_row = pd.Series(
+        {
+            "Tumor_Sample_Barcode": "TUMOUR_SAMPLE_001",
+            "Hugo_Symbol": "TP53",
+            "Chromosome": "17",
+            "Start_Position": 7579472,
+            "End_Position": 7579472,
+            "Reference_Allele": "C",
+            "Tumour_Seq_Allele2": "T",
+        }
+    )
+
+    # Tumour-normal pairs dictionary, must include a pair for "TUMOUR_SAMPLE_001"
+    tn_pairs = {
+        "TUMOUR_SAMPLE_001_NORMAL_SAMPLE_001": {
+            "TUMOUR": "TUMOUR_SAMPLE_001",
+            "NORMAL": "NORMAL_SAMPLE_001",
+        }
+    }
+
+    # When first writing with add_to_maf=True
+    write_variants_to_variant_file(variant_row, tn_pairs, True, variant_file)
+
+    # Then
+    # Check that the file now exists and contains the header + the variant row
+    assert variant_file.exists(), "Variant file should be created."
+    contents = variant_file.read_text().strip().split("\n")
+    assert len(contents) == 2, "Should have a header and one variant line."
+    assert (
+        contents[0]
+        == "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction"
+    )
+    expected_line = (
+        "TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001\tTP53\t17\t7579472\t7579472\tC\tT\tADD"
+    )
+    assert contents[1] == expected_line, "Variant line should match expected."
+
+    # When writing the same variant again
+    write_variants_to_variant_file(variant_row, tn_pairs, True, variant_file)
+
+    # Then
+    # There should still be only one variant line (no duplicates)
+    contents = variant_file.read_text().strip().split("\n")
+    assert len(contents) == 2, "No duplicate variants should be appended."
+    assert contents[1] == expected_line, "Duplicate line should not have been added."
+
+    # When writing the same variant with add_to_maf=False (remove)
+    write_variants_to_variant_file(variant_row, tn_pairs, False, variant_file)
+
+    # Then
+    # A remove action for the same variant should now be appended
+    # since it differs by the 'Action' field.
+    contents = variant_file.read_text().strip().split("\n")
+    assert len(contents) == 3, "Should now have a remove action line appended."
+    expected_remove_line = (
+        "TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001\tTP53\t17\t7579472\t7579472\tC\tT\tREMOVE"
+    )
+    assert (
+        contents[2] == expected_remove_line
+    ), "The remove action line should match expected."
+
+
+# Tests for process_true_positives
+
+
+def test_process_true_positives_germline_classification(tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+
+    # Given:
+    # Create a mock mpileup file with:
+    # - One TRUE_POSITIVE variant (in TUMOUR_SAMPLE_001)
+    # - The same variant present as FALSE_NEGATIVE in multiple other pairs
+    # - Normals with ALT reads above threshold
+    mpileup_data = """# Comment line
+Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t4\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t4\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_004\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_004\t4\t100\tFALSE_NEGATIVE
+"""
+    mpileup_file = tmp_path / "mpileup_test.tsv"
+    mpileup_file.write_text(mpileup_data)
+
+    # Create a tumour-normal pairs file that includes the samples:
+    # We have T1-N1, T2-N2, T3-N3, T4-N4 pairs.
+    # The TRUE_POSITIVE variant is in T1. The FALSE_NEGATIVE ones are in T2, T3, T4.
+    # Normal samples have ALT reads >3 to qualify as germline.
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
+TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
+TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
+"""
+    tn_pairs_file = tmp_path / "tn_pairs_test.tsv"
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    # The output variant file
+    variant_file = tmp_path / "variants_output.tsv"
+
+    # Parameters:
+    # Setting a low min_germline_tn_pairs to 3 means that if 3 or more pairs are flagged as FALSE_NEGATIVE,
+    # we start considering germline classification. We have T2, T3, T4 as false negatives (3 pairs).
+    # min_alt_norm_reads=3 means normals with >3 ALT reads are considered germline.
+    # In this data, NORMAL_SAMPLE_002, NORMAL_SAMPLE_003, and NORMAL_SAMPLE_004 have 4 ALT reads each.
+    min_germline_tn_pairs = 3
+    min_alt_norm_reads = 3
+
+    # When:
+    process_true_positives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_germline_tn_pairs=min_germline_tn_pairs,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then:
+    # We expect that the TRUE_POSITIVE variant for TP53 has been reclassified as germline and thus should be marked as REMOVE.
+    assert variant_file.exists()
+    contents = variant_file.read_text().strip().split("\n")
+
+    # Check the header and the REMOVE line
+    assert len(contents) == 2, "There should be a header plus one variant line."
+    assert contents[0].startswith(
+        "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction"
+    )
+    expected_remove_line = (
+        "TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001\tTP53\t17\t7579472\t7579472\tC\tT\tREMOVE"
+    )
+    assert (
+        contents[1] == expected_remove_line
+    ), f"Expected remove line:\n{expected_remove_line}\nbut got:\n{contents[1]}"
+
+    # Check logs for expected messages
+    assert "Variant flagged as germline" in caplog.text
+
+
+def test_process_true_positives_not_germline_due_to_insufficient_pairs(
+    tmp_path, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    # Given:
+    # TRUE_POSITIVE in TUMOUR_SAMPLE_001
+    # FALSE_NEGATIVE in TUMOUR_SAMPLE_002 and NORMAL_SAMPLE_002
+    mpileup_data = """# Comment
+Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\tFALSE_NEGATIVE
+"""
+    mpileup_file = tmp_path / "mpileup_insufficient_pairs.tsv"
+    mpileup_file.write_text(mpileup_data)
+
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
+"""
+    tn_pairs_file = tmp_path / "tn_pairs_insufficient_pairs.tsv"
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    variant_file = tmp_path / "variants_output_insufficient_pairs.tsv"
+
+    # Set thresholds so germline classification is not possible
+    min_germline_tn_pairs = 3
+    min_alt_norm_reads = 3
+
+    # When
+    process_true_positives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_germline_tn_pairs=min_germline_tn_pairs,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then
+    assert not variant_file.exists(), "No germline variants should be flagged."
+    assert "Variant likely somatic based on initial criteria." in caplog.text
+
+
+def test_process_true_positives_not_germline_due_to_norm_reads(tmp_path, caplog):
+    caplog.set_level(logging.INFO)
+
+    # Given:
+    # TRUE_POSITIVE in TUMOUR_SAMPLE_001
+    # FALSE_NEGATIVE in T2, T3, T4 and their normals, meeting min_germline_tn_pairs
+    # But normals do not have >3 ALT reads, so no germline classification.
+    mpileup_data = """# Comment
+Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t2\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_004\t5\t100\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_004\t2\t100\tFALSE_NEGATIVE
+"""
+    mpileup_file = tmp_path / "mpileup_norm_reads_fail.tsv"
+    mpileup_file.write_text(mpileup_data)
+
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
+TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
+TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
+"""
+    tn_pairs_file = tmp_path / "tn_pairs_norm_reads_fail.tsv"
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    variant_file = tmp_path / "variants_output_norm_reads_fail.tsv"
+
+    # Parameters
+    min_germline_tn_pairs = 3
+    min_alt_norm_reads = 3
+
+    # When
+    process_true_positives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_germline_tn_pairs=min_germline_tn_pairs,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then
+    assert not variant_file.exists(), "No germline variant should be output."
+    assert "Variant likely somatic after additional checks." in caplog.text
+
+
+def test_process_true_positives_expected_mutations_in_output(
+    mpileup_file, tn_pairs_file, tmp_path, caplog
+):
+    caplog.set_level(logging.INFO)
+
+    # Define thresholds that we know from prior knowledge will classify at least one known variant as germline.
+    # From the mock file, we know BRAF meets the criteria under these thresholds:
+    min_germline_tn_pairs = 3
+    min_alt_norm_reads = 3
+
+    variant_file = tmp_path / "variants_output.tsv"
+
+    # Run the process_true_positives function on the fixture data
+    process_true_positives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_germline_tn_pairs=min_germline_tn_pairs,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # After processing, we expect the known germline variant to appear in the variant file.
+    expected_variant_line = (
+        "TUMOUR_SAMPLE_D\tNORMAL_SAMPLE_D\tBRAF\t7\t140453136\t140453136\tT\tA\tREMOVE"
+    )
+
+    # Read the variant file and check if the expected line is present
+    assert variant_file.exists(), "Variant file should be created."
+    contents = variant_file.read_text().strip().split("\n")
+    # Header line is always first
+    assert (
+        contents[0]
+        == "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction"
+    )
+    assert (
+        expected_variant_line in contents
+    ), f"Expected germline variant line not found: {expected_variant_line}"
+
+    # Optionally check logs to ensure correct classification messages appeared
+    assert (
+        "Variant flagged as germline" in caplog.text
+    ), "Log should indicate the variant was flagged as germline."
