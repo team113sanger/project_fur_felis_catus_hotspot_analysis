@@ -626,30 +626,12 @@ def _count_germline_tn_pairs(
 
         # Ensure both rows exist
         if not tumour_row.empty and not normal_row.empty:
-            tumour_status = tumour_row["Status"].values[0]
-            normal_status = normal_row["Status"].values[0]
             tumour_alt_count = tumour_row["Alt_Count"].values[0]
             normal_alt_count = normal_row["Alt_Count"].values[0]
 
-            # Criterion 1: Tumour TRUE_NEGATIVE, Normal FALSE_NEGATIVE with > min_alt_norm_reads
-            if (
-                tumour_status == "TRUE_NEGATIVE"
-                and normal_status == "FALSE_NEGATIVE"
-                and normal_alt_count > min_alt_norm_reads
-            ):
+            if normal_alt_count >= min_alt_norm_reads:
                 logging.debug(
-                    f"{pair_id} flagged as germline with {tumour_alt_count} ALT reads in the tumour and {normal_alt_count} ALT reads in the normal."
-                )
-                germline_pair_count += 1
-
-            # Criterion 2: Tumour FALSE_NEGATIVE with < min_alt_tum_reads, Normal FALSE_NEGATIVE with > min_alt_norm_reads
-            elif (
-                tumour_status == "FALSE_NEGATIVE"
-                and normal_status == "FALSE_NEGATIVE"
-                and normal_alt_count > min_alt_norm_reads
-            ):
-                logging.debug(
-                    f"{pair_id} flagged as germline with {tumour_alt_count} ALT reads in the tumour and {normal_alt_count} ALT reads in the normal."
+                    f"{pair_id} is flagged as germline with {tumour_alt_count} ALT reads in the tumour and {normal_alt_count} ALT reads in the normal."
                 )
                 germline_pair_count += 1
 
@@ -728,11 +710,6 @@ def _process_germline_variants(
         if germline_tn_pair_count < min_germline_tn_pairs:
             logging.info("Variant likely somatic based on initial criteria.")
             continue
-
-        logging.info(
-            f"Identified potential germline variant ({germline_tn_pair_count} out of {len(tn_pairs)} "
-            "tumour-normal pairs have a false negative variant). Performing further checks ..."
-        )
 
         if germline_tn_pair_count >= min_germline_tn_pairs:
             _log_flagged_germline_pairs(
