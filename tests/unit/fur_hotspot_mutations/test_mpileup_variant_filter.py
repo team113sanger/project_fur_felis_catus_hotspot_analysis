@@ -776,6 +776,9 @@ def test_process_false_negatives_adds_variant_when_criteria_met(
 
     variant_file = tmp_path / "variants_output.tsv"
 
+    # Create an empty set of germline variants to simulate no pre-existing germline exclusions
+    germline_variant_ids = set()
+
     # When
     process_false_negatives(
         mpileup_file=mpileup_file,
@@ -783,6 +786,7 @@ def test_process_false_negatives_adds_variant_when_criteria_met(
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
+        germline_variant_ids=germline_variant_ids,
     )
 
     # Then
@@ -820,6 +824,9 @@ def test_process_false_negatives_no_add_when_criteria_not_met(
     min_alt_norm_reads = 0  # normal must have <0 is impossible, so no variants added
     variant_file = tmp_path / "variants_output.tsv"
 
+    # Create an empty set of germline variants to simulate no pre-existing germline exclusions
+    germline_variant_ids = set()
+
     # When
     process_false_negatives(
         mpileup_file=mpileup_file,
@@ -827,6 +834,7 @@ def test_process_false_negatives_no_add_when_criteria_not_met(
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
+        germline_variant_ids=germline_variant_ids,
     )
 
     # Then
@@ -859,6 +867,9 @@ def test_process_false_negatives_only_tumour_samples_added(
     min_alt_norm_reads = 5
     variant_file = tmp_path / "variants_output.tsv"
 
+    # Create an empty set of germline variants to simulate no pre-existing germline exclusions
+    germline_variant_ids = set()
+
     # When
     process_false_negatives(
         mpileup_file=mpileup_file,
@@ -866,6 +877,7 @@ def test_process_false_negatives_only_tumour_samples_added(
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
+        germline_variant_ids=germline_variant_ids,
     )
 
     # Then
@@ -884,3 +896,85 @@ def test_process_false_negatives_only_tumour_samples_added(
     else:
         # If no variants added, test still passes since no normal samples were added
         pass
+
+
+def test_prevent_germline_readdition(tmp_path, caplog):
+    """
+    Test that variants flagged as germline are not re-added as false-negative variants using mock data.
+    """
+    caplog.set_level(logging.DEBUG)
+
+    # Step 1: Create mock mpileup and tumour-normal pairs data
+    mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tTRUE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t50\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t4\t50\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t20\t50\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t1\t50\tFALSE_NEGATIVE
+"""
+
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
+TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
+"""
+
+    # Write mock data to temporary files
+    mpileup_file = tmp_path / "mock_mpileup.tsv"
+    tn_pairs_file = tmp_path / "mock_tn_pairs.tsv"
+    variant_file = tmp_path / "mock_variant_output.tsv"
+    mpileup_file.write_text(mpileup_data)
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    # Step 2: Process true positives to flag a variant as germline (REMOVE)
+    min_germline_tn_pairs = 1  # Low threshold to ensure germline detection
+    min_alt_norm_reads = 3  # Normals with ALT_Count >3 are flagged
+
+    # Process true positives and get the germline variants set
+    germline_variant_ids = process_true_positives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_germline_tn_pairs=min_germline_tn_pairs,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    logging.debug(
+        f"Germline variant IDs after processing true positives: {germline_variant_ids}"
+    )
+
+    # Assert that the germline variant was flagged for removal
+    assert variant_file.exists(), "Variant file should be created."
+    with open(variant_file, "r") as vf:
+        contents = vf.readlines()
+    assert len(contents) > 1, "The variant file should have a REMOVE entry."
+    assert "REMOVE" in contents[-1], "The last action should be REMOVE."
+
+    # Step 3: Process false negatives and ensure no re-addition of germline variants
+    min_alt_tum_reads = 1  # Low threshold to ensure addition criteria are met
+    min_alt_norm_reads = 3  # Low threshold to ensure addition criteria are met
+
+    # Process false negatives
+    process_false_negatives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_alt_tum_reads=min_alt_tum_reads,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+        germline_variant_ids=germline_variant_ids,
+    )
+
+    # Re-read the variant file after false-negative processing
+    with open(variant_file, "r") as vf:
+        updated_contents = vf.readlines()
+
+    # Ensure no ADD actions are created for germline variants
+    assert all(
+        "ADD" not in line for line in updated_contents if "TP53" in line
+    ), "Variants flagged as germline should not be re-added to the variant file."
+
+    # Log validation
+    assert (
+        "Skipping variant" in caplog.text
+    ), "Log should indicate that a germline variant was skipped during false-negative processing."

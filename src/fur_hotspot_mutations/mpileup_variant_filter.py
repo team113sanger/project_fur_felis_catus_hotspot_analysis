@@ -405,13 +405,7 @@ def _convert_chromosome_to_string(chromosome: Union[int, str]) -> str:
             "Value for chromosome is empty. Check input data. Requires a non-empty string or an integer."
         )
 
-    # Convert any chromosomes that are integers (e.g. 17) to strings
-    if isinstance(chromosome, int):
-        as_string = str(chromosome)
-        return as_string
-
-    # If chromosome is already a string, return it
-    return chromosome
+    return str(chromosome)
 
 
 def _construct_variant_file_row(
@@ -454,6 +448,31 @@ def _construct_variant_file_row(
     )
 
     return new_variant_file_row
+
+
+def _counstruct_variant_id(variant_row: pd.Series) -> str:
+    """
+    Construct a unique variant ID for a given variant.
+
+    Args:
+        variant_row (pd.Series): A row containing variant data
+
+    Returns:
+        str: The unique variant ID for this variant
+    """
+
+    variant_id = "|".join(
+        [
+            variant_row["Hugo_Symbol"],
+            _convert_chromosome_to_string(variant_row["Chromosome"]),
+            str(variant_row["Start_Position"]),
+            str(variant_row["End_Position"]),
+            variant_row["Reference_Allele"],
+            variant_row["Tumour_Seq_Allele2"],
+        ]
+    )
+
+    return variant_id
 
 
 def write_variants_to_variant_file(
@@ -604,6 +623,7 @@ def _process_germline_variants(
     )
 
     germline_rows = []
+    germline_variant_ids = set()
 
     for _, row in true_pos_df.iterrows():
         logging.info(
@@ -646,6 +666,10 @@ def _process_germline_variants(
             )
             germline_rows.append(row)
 
+            #
+            variant_id = _counstruct_variant_id(row)
+            germline_variant_ids.add(variant_id)
+
         else:
             logging.info("Variant likely somatic after additional checks.")
 
@@ -656,6 +680,8 @@ def _process_germline_variants(
             add_to_maf=False,
             variant_file=variant_file,
         )
+
+    return germline_variant_ids
 
 
 def process_true_positives(
@@ -671,9 +697,11 @@ def process_true_positives(
     mpileup_df = _load_and_validate_mpileup(mpileup_file)
     tn_pairs_df = _load_and_validate_tn_pairs(tn_pairs_file)
     tn_pairs = _validate_samples(mpileup_df, tn_pairs_df)
-    _process_germline_variants(
+    germline_variant_ids = _process_germline_variants(
         mpileup_df, tn_pairs, min_germline_tn_pairs, min_alt_norm_reads, variant_file
     )
+
+    return germline_variant_ids
 
 
 # Functions for processing false negative variants
@@ -761,44 +789,33 @@ def _process_single_variant(
     return False
 
 
-def _process_fn_variants(
-    mpileup_df: pd.DataFrame,
-    tn_pairs: dict,
-    min_alt_tum_reads: int,
-    min_alt_norm_reads: int,
-    variant_file: Path,
-) -> None:
-    """
-    Processes false negative variants to identify those suitable for addition to the MAF file.
+def _should_skip_variant(variant, germline_variant_ids):
+    variant_id = _counstruct_variant_id(variant)
+    logging.debug(f"Processing variant ID: {variant_id}")
+    if variant_id in germline_variant_ids:
+        logging.info(
+            f"Skipping variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
+            f"as it has been previously flagged as germline."
+        )
+        return True
+    return False
 
-    Criteria:
-    - Variant is marked as FALSE_NEGATIVE in a tumour sample.
-    - Tumour sample's Alt_Count > min_alt_tum_reads.
-    - Matched normal sample's Alt_Count < min_alt_norm_reads.
 
-    Parameters:
-        mpileup_df (pd.DataFrame): The mpileup DataFrame containing variant information.
-        tn_pairs (dict): Dictionary mapping tumour-normal pairs.
-        min_alt_tum_reads (int): Minimum ALT reads threshold in tumour samples.
-        min_alt_norm_reads (int): Maximum ALT reads threshold in normal samples.
-        variant_file (Path): Path to the output variant file.
-    """
-    logging.info("Processing false negative variants for potential addition to MAF...")
-
-    # Extract all false negative variants
-    false_neg_df = extract_false_negatives_from_mpileup_df(mpileup_df)
-
-    if false_neg_df.empty:
-        logging.info("No false negative variants found. Nothing to add.")
-        return
-
-    # Extract all tumour sample IDs for quick lookup
-    tumour_samples = {pair["TUMOUR"] for pair in tn_pairs.values()}
-
-    variants_added = 0  # Counter for added variants
-
+def _process_variants(
+    false_neg_df,
+    mpileup_df,
+    tn_pairs,
+    min_alt_tum_reads,
+    min_alt_norm_reads,
+    variant_file,
+    tumour_samples,
+    germline_variant_ids,
+):
+    variants_added = 0
     for _, variant in false_neg_df.iterrows():
-        added = _process_single_variant(
+        if _should_skip_variant(variant, germline_variant_ids):
+            continue
+        if _process_single_variant(
             variant=variant,
             mpileup_df=mpileup_df,
             tn_pairs=tn_pairs,
@@ -806,14 +823,52 @@ def _process_fn_variants(
             min_alt_norm_reads=min_alt_norm_reads,
             variant_file=variant_file,
             tumour_samples=tumour_samples,
-        )
-        if added:
+        ):
             variants_added += 1
+    return variants_added
 
-    if variants_added == 0:
-        logging.info("No variants met the criteria for addition to MAF.")
-    else:
-        logging.info(f"Total variants added to MAF: {variants_added}")
+
+def _process_fn_variants(
+    mpileup_df: pd.DataFrame,
+    tn_pairs: dict,
+    min_alt_tum_reads: int,
+    min_alt_norm_reads: int,
+    variant_file: Path,
+    germline_variant_ids: set,
+) -> None:
+    """
+    Processes false negative variants to identify those suitable for addition to the MAF file.
+    """
+    logging.info("Processing false negative variants for potential addition to MAF...")
+
+    # Extract all false negative variants
+    false_neg_df = extract_false_negatives_from_mpileup_df(mpileup_df)
+    logging.debug(f"Extracted false negative variants:\n{false_neg_df}")
+
+    if false_neg_df.empty:
+        logging.info("No false negative variants found. Nothing to add.")
+        return
+
+    # Prepare necessary data
+    tumour_samples = {pair["TUMOUR"] for pair in tn_pairs.values()}
+    germline_variant_ids = germline_variant_ids or set()
+    logging.debug(f"Germline variant IDs: {germline_variant_ids}")
+
+    # Process each variant
+    variants_added = _process_variants(
+        false_neg_df,
+        mpileup_df,
+        tn_pairs,
+        min_alt_tum_reads,
+        min_alt_norm_reads,
+        variant_file,
+        tumour_samples,
+        germline_variant_ids,
+    )
+
+    logging.info(
+        f"{'No variants met the criteria for addition to MAF.' if variants_added == 0 else f'Total variants added to MAF: {variants_added}'}"
+    )
 
 
 def process_false_negatives(
@@ -822,6 +877,7 @@ def process_false_negatives(
     min_alt_tum_reads: int,
     min_alt_norm_reads: int,
     variant_file: Path,
+    germline_variant_ids: set,
 ):
     """
     High-level function to load data and processes false negative tumour variants to check if they meet the criteria for being added to the MAF file
@@ -841,7 +897,12 @@ def process_false_negatives(
     tn_pairs = _validate_samples(mpileup_df, tn_pairs_df)
 
     _process_fn_variants(
-        mpileup_df, tn_pairs, min_alt_tum_reads, min_alt_norm_reads, variant_file
+        mpileup_df,
+        tn_pairs,
+        min_alt_tum_reads,
+        min_alt_norm_reads,
+        variant_file,
+        germline_variant_ids,
     )
 
 
@@ -859,7 +920,7 @@ def main():
     setup_logging(logging_level)
 
     # Process true positive variants and check if they are likely germline
-    process_true_positives(
+    germline_variants = process_true_positives(
         mpileup_file,
         tn_pairs_file,
         min_germline_tn_pairs,
@@ -868,7 +929,12 @@ def main():
     )
 
     process_false_negatives(
-        mpileup_file, tn_pairs_file, min_alt_tum_reads, min_alt_norm_reads, variant_file
+        mpileup_file,
+        tn_pairs_file,
+        min_alt_tum_reads,
+        min_alt_norm_reads,
+        variant_file,
+        germline_variants,
     )
 
 
