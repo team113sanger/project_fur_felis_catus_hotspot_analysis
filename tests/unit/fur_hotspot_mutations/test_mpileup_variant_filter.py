@@ -721,7 +721,7 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
 def test_process_true_positives_expected_mutations_in_output(
     mpileup_file, tn_pairs_file, tmp_path, caplog
 ):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
 
     # Define thresholds that we know from prior knowledge will classify at least one known variant as germline.
     # From the mock file, we know BRAF meets the criteria under these thresholds:

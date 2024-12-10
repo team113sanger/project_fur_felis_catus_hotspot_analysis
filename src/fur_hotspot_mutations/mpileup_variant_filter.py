@@ -305,9 +305,38 @@ def _validate_mpileup_file(mpileup_file: Path):
         raise
 
 
+def _validate_mpileup_df_columns(df: pd.DataFrame):
+    """
+    Validates that the required columns are present in the DataFrame.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame to validate.
+        required_columns (list): List of required column names.
+
+    Raises:
+        ValueError: If any required column is missing.
+    """
+    required_columns = [
+        "Hugo_Symbol",
+        "Chromosome",
+        "Start_Position",
+        "End_Position",
+        "Tumor_Sample_Barcode",
+        "Status",
+        "Alt_Count",
+    ]
+
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        raise ValueError(f"Missing required columns: {', '.join(missing_columns)}")
+
+
 def _load_and_validate_mpileup(mpileup_file: Path) -> pd.DataFrame:
     _validate_mpileup_file(mpileup_file)
-    return tsv_to_df(mpileup_file)
+    mpileup_df = tsv_to_df(mpileup_file)
+    _validate_mpileup_df_columns(mpileup_df)
+
+    return mpileup_df
 
 
 def _extract_matching_variant_rows(row: pd.Series, mpileup_df: pd.DataFrame):
@@ -494,6 +523,52 @@ def write_variants_to_variant_file(
 
 
 # Functions for processing true positive variants
+def _filter_false_negative_pairs(
+    variant_rows_df: pd.DataFrame, tn_pairs: dict
+) -> pd.DataFrame:
+    """
+    Filters the DataFrame to include only tumor-normal pairs where both samples have a FALSE_NEGATIVE mutation.
+
+    Parameters:
+        variant_rows_df (pd.DataFrame): DataFrame containing rows for a specific variant across samples.
+        tn_pairs (dict): Dictionary of tumor-normal pairs.
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame containing only tumor-normal pairs with FALSE_NEGATIVE status.
+    """
+    # logging.debug(f"Input variant_rows_df:\n{variant_rows_df}")
+    filtered_rows = []
+
+    for pair_id, samples in tn_pairs.items():
+        tumour_sample_id = samples["TUMOUR"]
+        normal_sample_id = samples["NORMAL"]
+
+        # Retrieve rows for the tumor and normal samples
+        tumour_row = variant_rows_df[
+            variant_rows_df["Tumor_Sample_Barcode"] == tumour_sample_id
+        ]
+        normal_row = variant_rows_df[
+            variant_rows_df["Tumor_Sample_Barcode"] == normal_sample_id
+        ]
+
+        # logging.debug(f"Tumour row: {tumour_row}, Normal row: {normal_row}")
+
+        # Ensure both rows exist and both have a FALSE_NEGATIVE status
+        if not tumour_row.empty and not normal_row.empty:
+            if (
+                tumour_row["Status"].values[0] == "FALSE_NEGATIVE"
+                and normal_row["Status"].values[0] == "FALSE_NEGATIVE"
+            ):
+                # Add both rows to the filtered list
+                filtered_rows.append(tumour_row.iloc[0])
+                filtered_rows.append(normal_row.iloc[0])
+
+    result_df = pd.DataFrame(filtered_rows)
+    # logging.debug(f"Filtered false negative pairs:\n{result_df}")
+
+    return result_df
+
+
 def _pair_is_present(
     sample_ids_in_df: set, tumour_sample_id: str, normal_sample_id: str
 ) -> bool:
@@ -517,25 +592,24 @@ def _pair_is_present(
 def _count_tn_pairs(df: pd.DataFrame, tn_pairs_dict: dict) -> int:
     """
     Counts the number of tumour-normal pairs present in the given DataFrame.
-
-    Parameters:
-        df (pd.DataFrame): A DataFrame containing mpileup variant rows.
-        tn_pairs_dict (dict): A dictionary containing tumour-normal pairs.
-            Expected structure: {pair_id: {'TUMOUR': tumour_sample_id, 'NORMAL': normal_sample_id}}
-
-    Returns:
-        int: The number of tumour-normal pairs present in the DataFrame.
     """
+    if df.empty:
+        logging.warning("The DataFrame is empty. No tumour-normal pairs to count.")
+        return 0
+
+    # logging.debug(f"DataFrame before counting TN pairs:\n{df}")
+
     sample_ids_in_df = set(df["Tumor_Sample_Barcode"].unique())
+    # logging.debug(f"Sample IDs in DataFrame: {sample_ids_in_df}")
 
     pair_count = 0
-
     for pair_id, samples in tn_pairs_dict.items():
         tumour_sample_id = samples["TUMOUR"]
         normal_sample_id = samples["NORMAL"]
         if _pair_is_present(sample_ids_in_df, tumour_sample_id, normal_sample_id):
             pair_count += 1
 
+    # logging.debug(f"Total TN pairs counted: {pair_count}")
     return pair_count
 
 
@@ -631,9 +705,9 @@ def _process_germline_variants(
             f"in sample {row['Tumor_Sample_Barcode']} ..."
         )
         matching_variant_rows_df = _extract_matching_variant_rows(row, mpileup_df)
-        false_neg_variant_rows = matching_variant_rows_df[
-            matching_variant_rows_df["Status"] == "FALSE_NEGATIVE"
-        ]
+        false_neg_variant_rows = _filter_false_negative_pairs(
+            matching_variant_rows_df, tn_pairs
+        )
 
         false_neg_tn_pair_count = _count_tn_pairs(false_neg_variant_rows, tn_pairs)
         logging.debug(
@@ -736,6 +810,10 @@ def _process_single_variant(
 
     # Ensure we're only processing tumour samples
     if tumour_sample not in tumour_samples:
+        logging.info(
+            f"Skipping variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} in {variant['Tumor_Sample_Barcode']} "
+            f"because it originates from a normal sample."
+        )
         return False
 
     # Get the matched normal sample
@@ -791,10 +869,9 @@ def _process_single_variant(
 
 def _should_skip_variant(variant, germline_variant_ids):
     variant_id = _counstruct_variant_id(variant)
-    logging.debug(f"Processing variant ID: {variant_id}")
     if variant_id in germline_variant_ids:
         logging.info(
-            f"Skipping variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
+            f"Skipping variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} in {variant['Tumor_Sample_Barcode']} "
             f"as it has been previously flagged as germline."
         )
         return True
@@ -843,7 +920,6 @@ def _process_fn_variants(
 
     # Extract all false negative variants
     false_neg_df = extract_false_negatives_from_mpileup_df(mpileup_df)
-    logging.debug(f"Extracted false negative variants:\n{false_neg_df}")
 
     if false_neg_df.empty:
         logging.info("No false negative variants found. Nothing to add.")
@@ -852,7 +928,6 @@ def _process_fn_variants(
     # Prepare necessary data
     tumour_samples = {pair["TUMOUR"] for pair in tn_pairs.values()}
     germline_variant_ids = germline_variant_ids or set()
-    logging.debug(f"Germline variant IDs: {germline_variant_ids}")
 
     # Process each variant
     variants_added = _process_variants(
