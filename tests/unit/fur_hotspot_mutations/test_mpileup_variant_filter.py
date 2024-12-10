@@ -11,8 +11,7 @@ from fur_hotspot_mutations.mpileup_variant_filter import (
     extract_false_negatives_from_mpileup_df,
     _check_tn_pairs,
     _extract_tn_pairs_from_df,
-    _count_tn_pairs,
-    _count_alt_reads_in_normals,
+    _count_germline_tn_pairs,
     _get_matched_normal,
     _convert_chromosome_to_string,
     _construct_variant_file_row,
@@ -289,91 +288,125 @@ def test_extract_tn_pairs_from_df_valid_data(tn_pairs_df):
         assert result[key] == expected_result[key]
 
 
-# Tests for _count_tn_pairs
-def test_count_tn_pairs(mpileup_df, tn_pairs_df):
-    """
-    Test that _count_tn_pairs correctly counts the number of tumour-normal pairs in the DataFrame.
-    """
+# # Tests for _count_tn_pairs
+# def test_count_tn_pairs(mpileup_df, tn_pairs_df):
+#     """
+#     Test that _count_tn_pairs correctly counts the number of tumour-normal pairs in the DataFrame.
+#     """
+#     # Given
+#     tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
+#     # Assume we have a variant that exists in all tumour-normal pairs
+#     variant_rows_df = mpileup_df.copy()
+
+#     # When
+#     pair_count = _count_tn_pairs(variant_rows_df, tn_pairs)
+
+#     # Then
+#     assert pair_count == len(tn_pairs)
+
+
+# def test_count_tn_pairs_no_pairs(mpileup_df, tn_pairs_df):
+#     """
+#     Test that _count_tn_pairs returns zero when no pairs are present in the DataFrame.
+#     """
+#     # Given
+#     tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
+#     # Create a DataFrame with no matching sample IDs
+#     variant_rows_df = mpileup_df[
+#         mpileup_df["Tumor_Sample_Barcode"] == "Nonexistent_Sample"
+#     ]
+
+#     # When
+#     pair_count = _count_tn_pairs(variant_rows_df, tn_pairs)
+
+#     # Then
+#     assert pair_count == 0
+
+
+# # Tests for _count_alt_reads_in_normals
+
+
+# def test_count_alt_reads_in_normals():
+#     # Sample variant rows DataFrame
+#     data = {
+#         "Hugo_Symbol": ["TP53", "TP53", "TP53", "TP53", "TP53", "TP53"],
+#         "Chromosome": ["chr17", "chr17", "chr17", "chr17", "chr17", "chr17"],
+#         "Start_Position": [7579472, 7579472, 7579472, 7579472, 7579472, 7579472],
+#         "Tumor_Sample_Barcode": [
+#             "TUMOUR_SAMPLE_1",
+#             "NORMAL_SAMPLE_1",
+#             "TUMOUR_SAMPLE_2",
+#             "NORMAL_SAMPLE_2",
+#             "TUMOUR_SAMPLE_3",
+#             "NORMAL_SAMPLE_3",
+#         ],
+#         "Alt_Count": [10, 5, 8, 2, 15, 4],
+#         "Status": [
+#             "FALSE_NEGATIVE",
+#             "TRUE_NEGATIVE",
+#             "FALSE_NEGATIVE",
+#             "TRUE_NEGATIVE",
+#             "FALSE_NEGATIVE",
+#             "TRUE_NEGATIVE",
+#         ],
+#     }
+#     variant_rows_df = pd.DataFrame(data)
+
+#     # Sample tumor-normal pairs
+#     tn_pairs = {
+#         "PAIR_1": {"TUMOUR": "TUMOUR_SAMPLE_1", "NORMAL": "NORMAL_SAMPLE_1"},
+#         "PAIR_2": {"TUMOUR": "TUMOUR_SAMPLE_2", "NORMAL": "NORMAL_SAMPLE_2"},
+#         "PAIR_3": {"TUMOUR": "TUMOUR_SAMPLE_3", "NORMAL": "NORMAL_SAMPLE_3"},
+#     }
+
+#     # Set the minimum ALT reads threshold
+#     min_alt_norm_reads = 3
+
+#     # Expected count:
+#     # NORMAL_SAMPLE_1 has Alt_Count = 5 (>3) --> counts
+#     # NORMAL_SAMPLE_2 has Alt_Count = 2 (<=3) --> does not count
+#     # NORMAL_SAMPLE_3 has Alt_Count = 4 (>3) --> counts
+#     # Expected count = 2
+
+#     # Call the function
+#     count = _count_alt_reads_in_normals(variant_rows_df, tn_pairs, min_alt_norm_reads)
+
+#     # Assert the expected count
+#     assert count == 2, f"Expected count of 2, but got {count}"
+
+
+# Tests for _count_germline_tn_pairs
+
+
+def test_count_germline_tn_pairs():
     # Given
-    tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
-    # Assume we have a variant that exists in all tumour-normal pairs
-    variant_rows_df = mpileup_df.copy()
-
-    # When
-    pair_count = _count_tn_pairs(variant_rows_df, tn_pairs)
-
-    # Then
-    assert pair_count == len(tn_pairs)
-
-
-def test_count_tn_pairs_no_pairs(mpileup_df, tn_pairs_df):
-    """
-    Test that _count_tn_pairs returns zero when no pairs are present in the DataFrame.
-    """
-    # Given
-    tn_pairs = _extract_tn_pairs_from_df(tn_pairs_df)
-    # Create a DataFrame with no matching sample IDs
-    variant_rows_df = mpileup_df[
-        mpileup_df["Tumor_Sample_Barcode"] == "Nonexistent_Sample"
-    ]
-
-    # When
-    pair_count = _count_tn_pairs(variant_rows_df, tn_pairs)
-
-    # Then
-    assert pair_count == 0
-
-
-# Tests for _count_alt_reads_in_normals
-
-
-def test_count_alt_reads_in_normals():
-    # Sample variant rows DataFrame
-    data = {
-        "Hugo_Symbol": ["TP53", "TP53", "TP53", "TP53", "TP53", "TP53"],
-        "Chromosome": ["chr17", "chr17", "chr17", "chr17", "chr17", "chr17"],
-        "Start_Position": [7579472, 7579472, 7579472, 7579472, 7579472, 7579472],
-        "Tumor_Sample_Barcode": [
-            "TUMOUR_SAMPLE_1",
-            "NORMAL_SAMPLE_1",
-            "TUMOUR_SAMPLE_2",
-            "NORMAL_SAMPLE_2",
-            "TUMOUR_SAMPLE_3",
-            "NORMAL_SAMPLE_3",
-        ],
-        "Alt_Count": [10, 5, 8, 2, 15, 4],
+    variant_row_data = {
+        "Tumor_Sample_Barcode": ["TUM1", "NORM1", "TUM2", "NORM2"],
         "Status": [
-            "FALSE_NEGATIVE",
             "TRUE_NEGATIVE",
             "FALSE_NEGATIVE",
-            "TRUE_NEGATIVE",
             "FALSE_NEGATIVE",
-            "TRUE_NEGATIVE",
+            "FALSE_NEGATIVE",
         ],
+        "Alt_Count": [0, 10, 3, 12],  # Simulated ALT reads for tumour and normal
     }
-    variant_rows_df = pd.DataFrame(data)
+    variant_row_df = pd.DataFrame(variant_row_data)
 
-    # Sample tumor-normal pairs
     tn_pairs = {
-        "PAIR_1": {"TUMOUR": "TUMOUR_SAMPLE_1", "NORMAL": "NORMAL_SAMPLE_1"},
-        "PAIR_2": {"TUMOUR": "TUMOUR_SAMPLE_2", "NORMAL": "NORMAL_SAMPLE_2"},
-        "PAIR_3": {"TUMOUR": "TUMOUR_SAMPLE_3", "NORMAL": "NORMAL_SAMPLE_3"},
+        "PAIR1": {"TUMOUR": "TUM1", "NORMAL": "NORM1"},
+        "PAIR2": {"TUMOUR": "TUM2", "NORMAL": "NORM2"},
     }
+    min_alt_norm_reads = 8
 
-    # Set the minimum ALT reads threshold
-    min_alt_norm_reads = 3
+    # When
+    germline_pair_count = _count_germline_tn_pairs(
+        variant_row_df, tn_pairs, min_alt_norm_reads
+    )
 
-    # Expected count:
-    # NORMAL_SAMPLE_1 has Alt_Count = 5 (>3) --> counts
-    # NORMAL_SAMPLE_2 has Alt_Count = 2 (<=3) --> does not count
-    # NORMAL_SAMPLE_3 has Alt_Count = 4 (>3) --> counts
-    # Expected count = 2
-
-    # Call the function
-    count = _count_alt_reads_in_normals(variant_rows_df, tn_pairs, min_alt_norm_reads)
-
-    # Assert the expected count
-    assert count == 2, f"Expected count of 2, but got {count}"
+    # Then
+    assert (
+        germline_pair_count == 2
+    ), f"Expected 2 germline pairs, got {germline_pair_count}"
 
 
 # Tests for _get_matched_normal
@@ -715,7 +748,6 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
 
     # Then
     assert not variant_file.exists(), "No germline variant should be output."
-    assert "Variant likely somatic after additional checks." in caplog.text
 
 
 def test_process_true_positives_expected_mutations_in_output(

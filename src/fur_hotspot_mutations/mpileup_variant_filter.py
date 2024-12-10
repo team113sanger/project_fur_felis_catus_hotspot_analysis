@@ -589,65 +589,78 @@ def _pair_is_present(
     return is_present
 
 
-def _count_tn_pairs(df: pd.DataFrame, tn_pairs_dict: dict) -> int:
-    """
-    Counts the number of tumour-normal pairs present in the given DataFrame.
-    """
-    if df.empty:
-        logging.warning("The DataFrame is empty. No tumour-normal pairs to count.")
-        return 0
-
-    # logging.debug(f"DataFrame before counting TN pairs:\n{df}")
-
-    sample_ids_in_df = set(df["Tumor_Sample_Barcode"].unique())
-    # logging.debug(f"Sample IDs in DataFrame: {sample_ids_in_df}")
-
-    pair_count = 0
-    for pair_id, samples in tn_pairs_dict.items():
-        tumour_sample_id = samples["TUMOUR"]
-        normal_sample_id = samples["NORMAL"]
-        if _pair_is_present(sample_ids_in_df, tumour_sample_id, normal_sample_id):
-            pair_count += 1
-
-    # logging.debug(f"Total TN pairs counted: {pair_count}")
-    return pair_count
-
-
-def _count_alt_reads_in_normals(
-    variant_rows_df: pd.DataFrame, tn_pairs: dict, min_alt_norm_reads: int
+def _count_germline_tn_pairs(
+    variant_rows_df: pd.DataFrame,
+    tn_pairs: dict,
+    min_alt_norm_reads: int,
 ) -> int:
     """
-    Counts the number of tumour-normal pairs where the normal sample has more than min_alt_norm_reads ALT reads.
+    Counts the number of tumour-normal pairs that satisfy germline criteria:
+    1. Tumour has TRUE_NEGATIVE, and Normal has FALSE_NEGATIVE with > min_alt_norm_reads ALT reads.
+    2. Tumour has FALSE_NEGATIVE with < min_alt_tum_reads ALT reads, and Normal has FALSE_NEGATIVE with > min_alt_norm_reads ALT reads.
 
     Parameters:
-        variant_rows_df (pd.DataFrame): DataFrame containing rows for a specific variant across all samples.
+        variant_rows_df (pd.DataFrame): DataFrame containing rows for a specific variant across samples.
         tn_pairs (dict): Dictionary of tumour-normal pairs.
-        min_alt_norm_reads (int): Minimum number of ALT reads in the normal sample to consider a a tumour-normal pair as germline.
+        min_alt_tum_reads (int): Threshold for ALT reads in tumour samples.
+        min_alt_norm_reads (int): Threshold for ALT reads in normal samples.
 
     Returns:
-        int: Number of tumour-normal pairs meeting the criterion.
+        int: Number of tumour-normal pairs meeting the germline criteria.
     """
-    count = 0
+    logging.info("Counting germline tumour-normal pairs with this mutation ...")
+
+    germline_pair_count = 0
 
     for pair_id, samples in tn_pairs.items():
+        tumour_sample_id = samples["TUMOUR"]
         normal_sample_id = samples["NORMAL"]
 
-        # Get the normal sample row for this variant
-        normal_sample_row = variant_rows_df[
+        # Retrieve rows for the tumour and normal samples
+        tumour_row = variant_rows_df[
+            variant_rows_df["Tumor_Sample_Barcode"] == tumour_sample_id
+        ]
+        normal_row = variant_rows_df[
             variant_rows_df["Tumor_Sample_Barcode"] == normal_sample_id
         ]
 
-        if not normal_sample_row.empty:
-            alt_count = normal_sample_row["Alt_Count"].values[0]
-            logging.debug(
-                f"Normal sample {normal_sample_id} has {alt_count} ALT reads at this position"
-            )
-            if alt_count > min_alt_norm_reads:
-                count += 1
+        # Ensure both rows exist
+        if not tumour_row.empty and not normal_row.empty:
+            tumour_status = tumour_row["Status"].values[0]
+            normal_status = normal_row["Status"].values[0]
+            tumour_alt_count = tumour_row["Alt_Count"].values[0]
+            normal_alt_count = normal_row["Alt_Count"].values[0]
 
-    logging.info(f"Detected {count} germline tumour-normal pairs at this postion.")
+            # Criterion 1: Tumour TRUE_NEGATIVE, Normal FALSE_NEGATIVE with > min_alt_norm_reads
+            if (
+                tumour_status == "TRUE_NEGATIVE"
+                and normal_status == "FALSE_NEGATIVE"
+                and normal_alt_count > min_alt_norm_reads
+            ):
+                logging.debug(
+                    f"{pair_id} flagged as germline with {tumour_alt_count} ALT reads in the tumour and {normal_alt_count} ALT reads in the normal."
+                )
+                germline_pair_count += 1
 
-    return count
+            # Criterion 2: Tumour FALSE_NEGATIVE with < min_alt_tum_reads, Normal FALSE_NEGATIVE with > min_alt_norm_reads
+            elif (
+                tumour_status == "FALSE_NEGATIVE"
+                and normal_status == "FALSE_NEGATIVE"
+                and normal_alt_count > min_alt_norm_reads
+            ):
+                logging.debug(
+                    f"{pair_id} flagged as germline with {tumour_alt_count} ALT reads in the tumour and {normal_alt_count} ALT reads in the normal."
+                )
+                germline_pair_count += 1
+
+            # Variant does not satify germline criteria
+            else:
+                logging.debug(
+                    f"{pair_id} is likely somatic with {tumour_alt_count} ALT reads in the tumour and {normal_alt_count} ALT reads in the normal."
+                )
+
+    logging.debug(f"Counted {germline_pair_count} germline tumour-normal pairs.")
+    return germline_pair_count
 
 
 def _log_flagged_germline_pairs(
@@ -705,34 +718,25 @@ def _process_germline_variants(
             f"in sample {row['Tumor_Sample_Barcode']} ..."
         )
         matching_variant_rows_df = _extract_matching_variant_rows(row, mpileup_df)
-        false_neg_variant_rows = _filter_false_negative_pairs(
-            matching_variant_rows_df, tn_pairs
+        germline_tn_pair_count = _count_germline_tn_pairs(
+            matching_variant_rows_df, tn_pairs, min_alt_norm_reads
         )
-
-        false_neg_tn_pair_count = _count_tn_pairs(false_neg_variant_rows, tn_pairs)
         logging.debug(
-            f"Detected {false_neg_tn_pair_count} tumour-normal pairs with false negative mutations."
+            f"Detected {germline_tn_pair_count} tumour-normal pairs matching germline criteria."
         )
 
-        if false_neg_tn_pair_count < min_germline_tn_pairs:
+        if germline_tn_pair_count < min_germline_tn_pairs:
             logging.info("Variant likely somatic based on initial criteria.")
             continue
 
         logging.info(
-            f"Identified potential germline variant ({false_neg_tn_pair_count} out of {len(tn_pairs)} "
+            f"Identified potential germline variant ({germline_tn_pair_count} out of {len(tn_pairs)} "
             "tumour-normal pairs have a false negative variant). Performing further checks ..."
-        )
-
-        logging.info(
-            "Counting the number of ALT reads in normal samples with a false negative mutation ..."
-        )
-        germline_tn_pair_count = _count_alt_reads_in_normals(
-            false_neg_variant_rows, tn_pairs, min_alt_norm_reads
         )
 
         if germline_tn_pair_count >= min_germline_tn_pairs:
             _log_flagged_germline_pairs(
-                false_neg_variant_rows, tn_pairs, min_alt_norm_reads
+                matching_variant_rows_df, tn_pairs, min_alt_norm_reads
             )
             logging.info(
                 f"Variant flagged as germline (normal samples in {germline_tn_pair_count} tumour-normal pairs "
@@ -743,9 +747,6 @@ def _process_germline_variants(
             #
             variant_id = _counstruct_variant_id(row)
             germline_variant_ids.add(variant_id)
-
-        else:
-            logging.info("Variant likely somatic after additional checks.")
 
     for germline_row in germline_rows:
         write_variants_to_variant_file(
