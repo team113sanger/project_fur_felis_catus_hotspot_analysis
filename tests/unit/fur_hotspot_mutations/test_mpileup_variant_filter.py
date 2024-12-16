@@ -388,7 +388,8 @@ def test_count_germline_tn_pairs():
             "FALSE_NEGATIVE",
             "FALSE_NEGATIVE",
         ],
-        "Alt_Count": [0, 10, 3, 12],  # Simulated ALT reads for tumour and normal
+        "Alt_Count": [0, 10, 3, 12],
+        "Alt_Perc": [0.0, 10.0, 3.0, 12.0],
     }
     variant_row_df = pd.DataFrame(variant_row_data)
 
@@ -396,11 +397,13 @@ def test_count_germline_tn_pairs():
         "PAIR1": {"TUMOUR": "TUM1", "NORMAL": "NORM1"},
         "PAIR2": {"TUMOUR": "TUM2", "NORMAL": "NORM2"},
     }
+
+    min_vaf = 1.0
     min_alt_norm_reads = 8
 
     # When
     germline_pair_count = _count_germline_tn_pairs(
-        variant_row_df, tn_pairs, min_alt_norm_reads
+        variant_row_df, tn_pairs, min_vaf, min_alt_norm_reads
     )
 
     # Then
@@ -588,17 +591,18 @@ def test_process_true_positives_germline_classification(tmp_path, caplog):
     # - One TRUE_POSITIVE variant (in TUMOUR_SAMPLE_001)
     # - The same variant present as FALSE_NEGATIVE in multiple other pairs
     # - Normals with ALT reads above threshold
-    mpileup_data = """# Comment line
-Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t4\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t4\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_004\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_004\t4\t100\tFALSE_NEGATIVE
+    mpileup_data = """#Comment line
+Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\t10.0\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\t0.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t4\t100\t4.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t4\t100\t4.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_004\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_004\t4\t100\t4.0\tFALSE_NEGATIVE
 """
+
     mpileup_file = tmp_path / "mpileup_test.tsv"
     mpileup_file.write_text(mpileup_data)
 
@@ -625,11 +629,13 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
     # In this data, NORMAL_SAMPLE_002, NORMAL_SAMPLE_003, and NORMAL_SAMPLE_004 have 4 ALT reads each.
     min_germline_tn_pairs = 3
     min_alt_norm_reads = 3
+    min_vaf = 2.0
 
     # When:
     process_true_positives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_germline_tn_pairs=min_germline_tn_pairs,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -665,11 +671,11 @@ def test_process_true_positives_not_germline_due_to_insufficient_pairs(
     # TRUE_POSITIVE in TUMOUR_SAMPLE_001
     # FALSE_NEGATIVE in TUMOUR_SAMPLE_002 and NORMAL_SAMPLE_002
     mpileup_data = """# Comment
-Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\tFALSE_NEGATIVE
+Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\t10.0\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\t0.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\t2.0\tFALSE_NEGATIVE
 """
     mpileup_file = tmp_path / "mpileup_insufficient_pairs.tsv"
     mpileup_file.write_text(mpileup_data)
@@ -684,6 +690,7 @@ TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
     variant_file = tmp_path / "variants_output_insufficient_pairs.tsv"
 
     # Set thresholds so germline classification is not possible
+    min_vaf = 2.0
     min_germline_tn_pairs = 3
     min_alt_norm_reads = 3
 
@@ -691,6 +698,7 @@ TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
     process_true_positives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_germline_tn_pairs=min_germline_tn_pairs,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -705,19 +713,20 @@ def test_process_true_positives_not_germline_due_to_norm_reads(tmp_path, caplog)
     caplog.set_level(logging.INFO)
 
     # Given:
-    # TRUE_POSITIVE in TUMOUR_SAMPLE_001
-    # FALSE_NEGATIVE in T2, T3, T4 and their normals, meeting min_germline_tn_pairs
-    # But normals do not have >3 ALT reads, so no germline classification.
-    mpileup_data = """# Comment
-Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t2\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_004\t5\t100\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_004\t2\t100\tFALSE_NEGATIVE
+    # - One TRUE_POSITIVE in TUMOUR_SAMPLE_001
+    # - FALSE_NEGATIVE in T2, T3, T4 and their NORMALs, meeting min_germline_tn_pairs,
+    #   but the NORMAL samples do not meet the alt reads threshold (>3).
+    # - We now include 'Alt_Perc' to reflect the new VAF filter logic.
+    mpileup_data = """# Comment line
+Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\t10.0\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\t0.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\t2.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t2\t100\t2.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_004\t5\t100\t5.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_004\t2\t100\t2.0\tFALSE_NEGATIVE
 """
     mpileup_file = tmp_path / "mpileup_norm_reads_fail.tsv"
     mpileup_file.write_text(mpileup_data)
@@ -733,7 +742,7 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
 
     variant_file = tmp_path / "variants_output_norm_reads_fail.tsv"
 
-    # Parameters
+    min_vaf = 2.0
     min_germline_tn_pairs = 3
     min_alt_norm_reads = 3
 
@@ -741,6 +750,7 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
     process_true_positives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_germline_tn_pairs=min_germline_tn_pairs,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -755,23 +765,27 @@ def test_process_true_positives_expected_mutations_in_output(
 ):
     caplog.set_level(logging.DEBUG)
 
-    # Define thresholds that we know from prior knowledge will classify at least one known variant as germline.
-    # From the mock file, we know BRAF meets the criteria under these thresholds:
+    # Define thresholds that we know from the fixture data will classify BRAF as germline.
+    # The BRAF variant (TUMOUR_SAMPLE_D) is TRUE_POSITIVE, but there are multiple FALSE_NEGATIVE pairs
+    # with normal samples having ALT_Perc >= min_vaf and Alt_Count >= min_alt_norm_reads,
+    # thus meeting the germline reclassification criteria.
+    min_vaf = 0.5
     min_germline_tn_pairs = 3
     min_alt_norm_reads = 3
 
     variant_file = tmp_path / "variants_output.tsv"
 
-    # Run the process_true_positives function on the fixture data
+    # Run process_true_positives with the updated min_vaf filter
     process_true_positives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_germline_tn_pairs=min_germline_tn_pairs,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
     )
 
-    # After processing, we expect the known germline variant to appear in the variant file.
+    # After processing, we expect the known germline variant to appear in the variant file as REMOVE.
     expected_variant_line = (
         "TUMOUR_SAMPLE_D\tNORMAL_SAMPLE_D\tBRAF\t7\t140453136\t140453136\tT\tA\tREMOVE"
     )
@@ -788,7 +802,7 @@ def test_process_true_positives_expected_mutations_in_output(
         expected_variant_line in contents
     ), f"Expected germline variant line not found: {expected_variant_line}"
 
-    # Optionally check logs to ensure correct classification messages appeared
+    # Verify log messages for germline classification
     assert (
         "Variant flagged as germline" in caplog.text
     ), "Log should indicate the variant was flagged as germline."
@@ -798,11 +812,10 @@ def test_process_true_positives_expected_mutations_in_output(
 def test_process_false_negatives_adds_variant_when_criteria_met(
     mpileup_file, tn_pairs_file, tmp_path, caplog
 ):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.DEBUG)
 
-    # Given thresholds that allow a known false negative variant to be added
-    # For example, assume that a variant in TUMOUR_SAMPLE_001 is FALSE_NEGATIVE with Alt_Count=10 in tumour
-    # and its matched normal has Alt_Count=0, and we set min_alt_tum_reads=5, min_alt_norm_reads=3
+    # Given thresholds that allow a known false negative variant to be added.
+    min_vaf = 0.5
     min_alt_tum_reads = 5
     min_alt_norm_reads = 3
 
@@ -815,6 +828,7 @@ def test_process_false_negatives_adds_variant_when_criteria_met(
     process_false_negatives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -829,9 +843,8 @@ def test_process_false_negatives_adds_variant_when_criteria_met(
         contents[0]
         == "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction"
     )
+
     # Check that at least one expected variant line is present
-    # This line should match a known variant from your fixture data that meets the criteria
-    # Example (adjust as per your actual data):
     expected_line = (
         "TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001\tTP53\tchr17\t7579472\t7579472\tG\tA\tADD"
     )
@@ -850,19 +863,22 @@ def test_process_false_negatives_no_add_when_criteria_not_met(
 ):
     caplog.set_level(logging.INFO)
 
-    # Set thresholds so that no variants meet the criteria
-    # For example, set very high tumour ALT reads threshold and very low normal ALT reads threshold
-    min_alt_tum_reads = 100000  # very high, no tumour should meet this
-    min_alt_norm_reads = 0  # normal must have <0 is impossible, so no variants added
-    variant_file = tmp_path / "variants_output.tsv"
+    # Set thresholds so that no variants meet the criteria:
+    # 1. Extremely high tumour ALT reads (100000)
+    # 2. Impossibly low normal ALT reads (<0)
+    # 3. A large min_vaf that no variant in your mock data satisfies (e.g., 50%)
+    min_vaf = 50.0
+    min_alt_tum_reads = 100000
+    min_alt_norm_reads = 0
 
-    # Create an empty set of germline variants to simulate no pre-existing germline exclusions
-    germline_variant_ids = set()
+    variant_file = tmp_path / "variants_output.tsv"
+    germline_variant_ids = set()  # No pre-existing germline exclusions
 
     # When
     process_false_negatives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -892,9 +908,8 @@ def test_process_false_negatives_only_tumour_samples_added(
 ):
     caplog.set_level(logging.INFO)
 
-    # Choose thresholds that might tempt adding normal samples if not filtered out
-    # For instance, if a normal sample had ALT_Count that looked like it met criteria, but we must ensure
-    # that only tumour samples are processed.
+    # Choose thresholds that might tempt adding normal samples if not filtered out.
+    min_vaf = 2.0
     min_alt_tum_reads = 1
     min_alt_norm_reads = 5
     variant_file = tmp_path / "variants_output.tsv"
@@ -906,6 +921,7 @@ def test_process_false_negatives_only_tumour_samples_added(
     process_false_negatives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -932,18 +948,19 @@ def test_process_false_negatives_only_tumour_samples_added(
 
 def test_prevent_germline_readdition(tmp_path, caplog):
     """
-    Test that variants flagged as germline are not re-added as false-negative variants using mock data.
+    Test that variants flagged as germline are not re-added as false-negative variants using mock data,
+    now incorporating a VAF (Alt_Perc) requirement.
     """
     caplog.set_level(logging.DEBUG)
 
-    # Step 1: Create mock mpileup and tumour-normal pairs data
-    mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tStatus
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\tTRUE_POSITIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\tTRUE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t50\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t4\t50\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t20\t50\tFALSE_NEGATIVE
-TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t1\t50\tFALSE_NEGATIVE
+    # Step 1: Create mock mpileup data with an 'Alt_Perc' column for VAF filtering
+    mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\t10.0\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t50\t0.0\tTRUE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t5\t50\t10.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t4\t50\t8.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t20\t50\t40.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t1\t50\t2.0\tFALSE_NEGATIVE
 """
 
     tn_pairs_data = """TUMOUR\tNORMAL
@@ -959,14 +976,18 @@ TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
     mpileup_file.write_text(mpileup_data)
     tn_pairs_file.write_text(tn_pairs_data)
 
-    # Step 2: Process true positives to flag a variant as germline (REMOVE)
-    min_germline_tn_pairs = 1  # Low threshold to ensure germline detection
+    # Step 2: Process TRUE_POSITIVE variants to flag as germline (REMOVE).
+    min_vaf = 1.0  # Low VAF threshold to ensure easy germline detection
+    min_germline_tn_pairs = (
+        1  # Low threshold so just 1 T/N pair with enough ALT reads triggers germline
+    )
     min_alt_norm_reads = 3  # Normals with ALT_Count >3 are flagged
 
-    # Process true positives and get the germline variants set
+    # Process true positives and get the germline variant IDs
     germline_variant_ids = process_true_positives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
         min_germline_tn_pairs=min_germline_tn_pairs,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -980,17 +1001,18 @@ TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
     assert variant_file.exists(), "Variant file should be created."
     with open(variant_file, "r") as vf:
         contents = vf.readlines()
-    assert len(contents) > 1, "The variant file should have a REMOVE entry."
+    assert len(contents) > 1, "Variant file should have a REMOVE entry."
     assert "REMOVE" in contents[-1], "The last action should be REMOVE."
 
-    # Step 3: Process false negatives and ensure no re-addition of germline variants
-    min_alt_tum_reads = 1  # Low threshold to ensure addition criteria are met
-    min_alt_norm_reads = 3  # Low threshold to ensure addition criteria are met
+    # Step 3: Process FALSE_NEGATIVES and ensure germline variants are NOT re-added
+    # We keep the same (or slightly relaxed) thresholds for addition, but the germline variant should be skipped.
+    min_alt_tum_reads = 1
+    min_alt_norm_reads = 3
 
-    # Process false negatives
     process_false_negatives(
         mpileup_file=mpileup_file,
         tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,  # Include VAF threshold
         min_alt_tum_reads=min_alt_tum_reads,
         min_alt_norm_reads=min_alt_norm_reads,
         variant_file=variant_file,
@@ -1001,12 +1023,210 @@ TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
     with open(variant_file, "r") as vf:
         updated_contents = vf.readlines()
 
-    # Ensure no ADD actions are created for germline variants
+    # Ensure no ADD actions for previously flagged germline variant
     assert all(
         "ADD" not in line for line in updated_contents if "TP53" in line
     ), "Variants flagged as germline should not be re-added to the variant file."
 
-    # Log validation
+    # Check logs: "Skipping variant" typically indicates germline variants were not re-added
     assert (
         "Skipping variant" in caplog.text
     ), "Log should indicate that a germline variant was skipped during false-negative processing."
+
+
+# Tests to check VAF filtering
+
+
+def test_vaf_filtering_in_true_positives(tmp_path, caplog):
+    """
+    Test that variants with normal sample VAF below the threshold are excluded during true positives processing.
+    """
+    caplog.set_level("DEBUG")
+
+    # Given:
+    # We have one TRUE_POSITIVE variant in TUMOUR_SAMPLE_003 with normal at ~2% VAF
+    mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t10\t100\t10.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t1\t100\t1.0\tFALSE_NEGATIVE
+
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t12\t100\t12.0\tTRUE_POSITIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t2\t100\t2.0\tFALSE_NEGATIVE
+"""
+
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
+"""
+
+    # Write mock data to files
+    mpileup_file = tmp_path / "mock_mpileup_truepos_vaf.tsv"
+    mpileup_file.write_text(mpileup_data)
+    tn_pairs_file = tmp_path / "mock_tn_pairs_vaf.tsv"
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    variant_file = tmp_path / "variant_output.tsv"
+
+    # VAF filter parameters
+    min_vaf = 2  # Normal must have Alt_Perc >= 2% to be considered germline
+    min_germline_tn_pairs = 1  # Only one T/N pair needed to flag as germline
+    min_alt_norm_reads = (
+        1  # Normal samples must have >=1 ALT read for germline classification
+    )
+
+    # When
+    process_true_positives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
+        min_germline_tn_pairs=min_germline_tn_pairs,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+    )
+
+    # Then
+    assert variant_file.exists(), "Variant file should be created."
+    contents = variant_file.read_text().strip().split("\n")
+    # Header line plus one REMOVE action for the variant with normal VAF >= 2%
+    assert (
+        len(contents) == 2
+    ), f"Expected 2 lines in the file but found: {len(contents)}"
+
+    expected_remove_line = (
+        "TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003\tTP53\t17\t7579472\t7579472\tC\tT\tREMOVE"
+    )
+    assert (
+        expected_remove_line in contents
+    ), f"Expected line:\n{expected_remove_line}\nnot found in file."
+
+    # Check log message ensures variants with normal VAF < threshold were skipped
+    assert (
+        "likely somatic" in caplog.text
+    ), "Variants with normal VAF < threshold should be skipped."
+
+
+def test_vaf_filtering_in_false_negatives(tmp_path, caplog):
+    """
+    Test that variants with VAF below the threshold are excluded during false negatives processing.
+    Here, we set a high min_vaf (15%) and create mock data that meets that threshold for TUMOUR_SAMPLE_003.
+    """
+    caplog.set_level("INFO")
+
+    # Given: Mock mpileup data with a TUMOUR_SAMPLE_003 FALSE_NEGATIVE variant at 20% VAF.
+    # This ensures it passes the min_vaf=15 threshold and gets "added" to the variant file.
+    mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t1\t100\t1.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t0\t100\t0.0\tTRUE_NEGATIVE
+
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_003\t20\t100\t20.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_003\t0\t100\t0.0\tFALSE_NEGATIVE
+"""
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003
+"""
+
+    # Write mock data to temporary files
+    mpileup_file = tmp_path / "mock_mpileup_false_neg_vaf.tsv"
+    mpileup_file.write_text(mpileup_data)
+    tn_pairs_file = tmp_path / "mock_tn_pairs_false_neg_vaf.tsv"
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    # Output variant file
+    variant_file = tmp_path / "variant_output.tsv"
+
+    # No germline exclusions for this test
+    germline_variant_ids = set()
+
+    # Very high threshold for min_vaf=15. TUMOUR_SAMPLE_003 meets this with a 20% VAF, TUMOUR_SAMPLE_001 does not.
+    min_vaf = 15
+    min_alt_tum_reads = 5
+    min_alt_norm_reads = 1
+
+    # When
+    process_false_negatives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
+        min_alt_tum_reads=min_alt_tum_reads,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+        germline_variant_ids=germline_variant_ids,
+    )
+
+    # Then
+    assert variant_file.exists(), "Variant file should be created."
+    contents = variant_file.read_text().strip().split("\n")
+    # Header line plus one ADD action
+    assert len(contents) == 2, f"Expected 2 lines in the file but found {len(contents)}"
+
+    expected_add_line = (
+        "TUMOUR_SAMPLE_003\tNORMAL_SAMPLE_003\tTP53\t17\t7579472\t7579472\tC\tT\tADD"
+    )
+    assert (
+        expected_add_line in contents
+    ), f"Expected line:\n{expected_add_line}\nnot found in file."
+
+    # Ensure VAF filtering worked
+    assert (
+        "Skipping variant" in caplog.text
+    ), "Variants with VAF < threshold should be skipped."
+
+
+def test_vaf_filter_excludes_all_below_threshold(tmp_path, caplog):
+    """
+    Test that no variants are included if all have VAF below the threshold.
+    """
+    caplog.set_level("INFO")
+
+    # Given: Mock mpileup data where all variants have <5% VAF
+    mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_001\t2\t100\t2.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_001\t1\t100\t1.0\tFALSE_NEGATIVE
+
+TP53\t17\t7579472\t7579472\tC\tT\tTUMOUR_SAMPLE_002\t3\t100\t3.0\tFALSE_NEGATIVE
+TP53\t17\t7579472\t7579472\tC\tT\tNORMAL_SAMPLE_002\t2\t100\t2.0\tFALSE_NEGATIVE
+"""
+
+    tn_pairs_data = """TUMOUR\tNORMAL
+TUMOUR_SAMPLE_001\tNORMAL_SAMPLE_001
+TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
+"""
+
+    mpileup_file = tmp_path / "mock_mpileup_excludes_vaf.tsv"
+    mpileup_file.write_text(mpileup_data)
+    tn_pairs_file = tmp_path / "mock_tn_pairs_excludes_vaf.tsv"
+    tn_pairs_file.write_text(tn_pairs_data)
+
+    variant_file = tmp_path / "variant_output.tsv"
+    germline_variant_ids = set()
+
+    # All below 25% threshold
+    min_vaf = 25
+    min_alt_tum_reads = 5
+    min_alt_norm_reads = 1
+
+    # When
+    process_false_negatives(
+        mpileup_file=mpileup_file,
+        tn_pairs_file=tn_pairs_file,
+        min_vaf=min_vaf,
+        min_alt_tum_reads=min_alt_tum_reads,
+        min_alt_norm_reads=min_alt_norm_reads,
+        variant_file=variant_file,
+        germline_variant_ids=germline_variant_ids,
+    )
+
+    # Then
+    if variant_file.exists():
+        contents = variant_file.read_text().strip().split("\n")
+        # If the file exists, it should contain only the header
+        assert (
+            len(contents) == 1
+        ), "No variants should be added when VAF threshold is unmet."
+    # File may not be created if nothing is added, which is also valid
+
+    # Ensure logs reflect filtering
+    assert (
+        "No false negative variants found. Nothing to add." in caplog.text
+        or "No variants met the criteria" in caplog.text
+    ), "Logs should indicate no variants were added."
