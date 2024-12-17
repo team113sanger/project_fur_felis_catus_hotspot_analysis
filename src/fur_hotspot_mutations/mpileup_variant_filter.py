@@ -61,7 +61,7 @@ def parse_arguments():
         type=float,
         default=1,
         help="Threshold for the minimum variant allele frequency (VAF) for a given variant to be considered. "
-        "i.e. with the default value of 1, any variant showing <1% VAF will not be used for variant filtering decisions.",
+        "i.e. with the default value of 1, any variant showing < 1 %% VAF will not be used for variant filtering decisions.",
     )
 
     parser.add_argument(
