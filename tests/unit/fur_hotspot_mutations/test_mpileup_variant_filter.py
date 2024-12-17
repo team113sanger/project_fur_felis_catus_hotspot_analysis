@@ -706,7 +706,7 @@ TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
 
     # Then
     assert not variant_file.exists(), "No germline variants should be flagged."
-    assert "Variant likely somatic based on initial criteria." in caplog.text
+    assert "likely somatic" in caplog.text
 
 
 def test_process_true_positives_not_germline_due_to_norm_reads(tmp_path, caplog):
@@ -853,9 +853,7 @@ def test_process_false_negatives_adds_variant_when_criteria_met(
     ), f"Expected variant line not found: {expected_line}"
 
     # Check logs for confirmation
-    assert (
-        "Identified false negative variant suitable for addition to MAF" in caplog.text
-    )
+    assert "Adding FN variant to MAF" in caplog.text
 
 
 def test_process_false_negatives_no_add_when_criteria_not_met(
