@@ -757,6 +757,11 @@ def _process_single_variant(
     )
 
     if meets_criteria:
+        logging.debug(
+            f"Variant meets criteria for addition to MAF: Tumour VAF {vaf_tumour}% >= {min_vaf}%, "
+            f"Tumour ALT reads {alt_count_tumour} >= {min_alt_tum_reads}, "
+            f"Normal ALT reads {alt_count_normal} <= {min_alt_norm_reads}"
+        )
         logging.info(
             f"Adding FN variant to MAF: {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
             f"in tumour {tumour_sample}."
