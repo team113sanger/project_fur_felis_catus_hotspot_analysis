@@ -655,7 +655,7 @@ def only_add_variants_to_maf(
 
 
 def only_remove_variants_from_maf(
-    variant_df: pd.DataFrame, maf_df: pd.DataFrame
+    variant_df: pd.DataFrame, maf_df: pd.DataFrame, mpileup_file: Path
 ) -> pd.DataFrame:
     """
     Only remove variants specified in the 'variant_df' (Action == 'REMOVE') from the MAF DataFrame.
@@ -663,6 +663,7 @@ def only_remove_variants_from_maf(
     Args:
         variant_df (pd.DataFrame): DataFrame of variants with 'REMOVE' action.
         maf_df (pd.DataFrame): Original MAF DataFrame.
+        mpileup_file (Path): Path to the mpileup file.
 
     Returns:
         pd.DataFrame: Updated MAF DataFrame with removed variants.

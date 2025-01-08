@@ -361,12 +361,16 @@ def test_only_add_variants_to_maf(
 # --------------------------------------------------------------------------
 
 
-def test_only_remove_variants_from_maf(valid_maf_df, valid_variants_df):
+def test_only_remove_variants_from_maf(
+    valid_maf_df, valid_variants_df, valid_mpileup_df
+):
     """
     Test if only_remove_variants_from_maf removes all 'REMOVE' variants and ignores 'ADD'.
     """
     # We have 1 'REMOVE' row in valid_variants_df. The function should only remove those.
-    updated_df = only_remove_variants_from_maf(valid_variants_df, valid_maf_df)
+    updated_df = only_remove_variants_from_maf(
+        valid_variants_df, valid_maf_df, valid_mpileup_df
+    )
 
     # The remove variant has TP53 with TUM1 => that row is removed
     # The row for "EGFR" in valid_maf_df is still there
