@@ -503,10 +503,6 @@ def add_variants_to_maf_df(
         pd.DataFrame: Updated MAF DataFrame with newly added variants.
     """
     logging.debug(f"Preparing to add {len(add_variant_df)} new variants to the MAF.")
-    # Ensure the original MAF has a column that indicates if the variant was added by this script
-    if "Added_By_MAF_Updater" not in maf_df.columns:
-        # Existing rows were NOT added by this script
-        maf_df["Added_By_MAF_Updater"] = False
 
     new_maf_rows = []
 
@@ -748,6 +744,13 @@ def process_variants(
 
     maf_df = validate_and_load_maf_file(input_maf)
     variant_df, variant_actions = validate_and_load_variant_file(variant_file)
+
+    # Add the Added_By_MAF_Updater column to the MAF DataFrame to track variants that are added by this script
+    if "Added_By_MAF_Updater" not in maf_df.columns:
+        maf_df["Added_By_MAF_Updater"] = False
+        logging.debug(
+            "Initialized 'Added_By_MAF_Updater' column to False for existing variants."
+        )
 
     updated_maf_df = _process_variants_based_on_actions(
         variant_df, variant_actions, maf_df, mpileup_file
