@@ -1,0 +1,5 @@
+TUMOUR	NORMAL	Hugo_Symbol	Chromosome	Start_Position	End_Position	Reference_Allele	Alternate_Allele	Action
+Sample_T1	Sample_N1	TP53	17	7579472	7579472	C	T	ADD
+Sample_T2	Sample_N2	KRAS	12	25398285	25398285	G	A	ADD
+Sample_T3	Sample_N3	EGFR	7	55249071	55249071	G	A	REMOVE
+Sample_T4	Sample_N4	BRCA1	17	43045629	43045629	A	G	REMOVE
