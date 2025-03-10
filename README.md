@@ -1,6 +1,6 @@
 # fur_hotspot_mutations
 
-The purpose of this Python package is for demonstration & cloning purposes.
+This repository contians code and analysis results for identifying artefacts and rescuing false negative variant calls in the FUR Felis Catus dataset.
 
 |                         Main                         |                         Develop                          |
 | :----------------------------------------------------: | :------------------------------------------------------: |

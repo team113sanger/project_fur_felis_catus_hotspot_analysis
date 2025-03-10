@@ -60,7 +60,7 @@ foreach my $maf (@maflist) {
 	}
 }
 
-my @col_headers = ("Hugo_Symbol", "Gene", "HGVSp_Short", "Chromosome", "Start_Position", 
+my @col_headers = ("Hugo_Symbol", "Gene", "HGVSp_Short", "Chromosome", "Start_Position",
   "End_Position", "Variant_Type", "Reference_Allele", "Tumour_Seq_Allele2", "Tumor_Sample_Barcode",
   "Alt_Count", "Tot_Count", "Alt_Perc", "Var_in_MAF", "Status");
 
@@ -97,7 +97,7 @@ foreach my $var (sort keys %seen_var) {
 	my $vartype = $seen_var{"$chr:$start:$end:$ref:$alt"}{"type"};
 	my @mnp;
 	if ($vartype =~ /NP/ && $vartype ne 'SNP') {
-		@mnp = split('', $alt); 
+		@mnp = split('', $alt);
 	}
 	# Iterate through each position of each variant
 	my $totsamples = @samplelist;
