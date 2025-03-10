@@ -15,43 +15,6 @@ This repository contians code and analysis results for identifying artefacts and
 ## Table of Contents
 - [Installation and Usage](#installation-and-usage)
 - [Directory Structure](#directory-structure)
-- [CI/CD Pipeline Overview](#cicd-pipeline-overview)
-- [Development Installation](#development-installation)
-  - [Local/Remote Machine Setup](#localremote-machine-setup)
-    - [Prerequisites](#prerequisites)
-    - [Setup Steps](#setup-steps)
-  - [VSCode Devcontainer Setup](#vscode-devcontainer-setup)
-    - [Prerequisites](#prerequisites-1)
-    - [Setup Steps](#setup-steps-1)
-  - [Building with Docker](#building-with-docker)
-- [Running Tests](#running-tests)
-- [Rolling Out a Tagged Release](#rolling-out-a-tagged-release)
-- [Publishing package to PyPi](#publishing-package-to-pypi)
-
-## Installation and Usage
-
-This package is hosted on the [internal Gitlab PyPi server](https://gitlab.internal.sanger.ac.uk/groups/team113sanger/-/packages/). To install it, run the following command:
-
-```bash
-# If using poetry
-PROJECT_URL="https://gitlab.internal.sanger.ac.uk/api/v4/projects/5569/packages/pypi/simple"
-poetry source add --priority=supplemental gitlab-pypi $PROJECT_URL
-poetry add fur_hotspot_mutations --source gitlab-pypi
-
-# If using pip
-PROJECT_URL="https://gitlab.internal.sanger.ac.uk/api/v4/projects/5569/packages/pypi/simple"
-pip install fur_hotspot_mutations --index-url $PROJECT_URL
-
-# If using poetry but pulling the pacakge from the group level, you will need a personal access token or deploy token
-GROUP_URL="https://gitlab.internal.sanger.ac.uk/api/v4/groups/882/-/packages/pypi/simple"
-poetry source add --priority=supplemental gitlab-pypi-grp $GROUP_URL
-poetry config http-basic.gitlab-pypi-grp <your_username> <your_token>
-poetry add fur_hotspot_mutations --source gitlab-pypi-grp
-```
-
-If you see **authentication errors with** `pip` or `poetry`, your Gitlab repo has set it's PyPI to private - you can either use Personal Access Tokens or Deploy Tokens to authenticate. Or more conveniently, you can **change the project's PyPI settings to public**. Visit the Gitlab Repo's settings and you will want `Settings > General > Visibility, project features, permissions > Package Registry > Allow anyone to pull from Package Registry` to be set to `Enabled` and then **save the changes**.
-
-Once the `fur_hotspot_mutations` package is installed, it provides two command-line scripts: `add` and `multiply`. These scripts can be called directly from the command line.
 
 ## Directory structure
 
@@ -83,34 +46,6 @@ Once the `fur_hotspot_mutations` package is installed, it provides two command-l
 ## CI/CD Pipeline Overview
 
 The project's CI/CD pipeline is configured in `.gitlab-ci.yml` and comprises three stages: `build`, `test`, and `publish`.
-
-The pipeline makes use of predefined CI/CD templates included from the [team113sanger/common/cicd-template](https://gitlab.internal.sanger.ac.uk/team113sanger/common/cicd-template) repository. These components provide predefined variables, scripts, and rules used in the pipeline. They are version controlled and included into the `.gitlab-ci.yml` file using the `include` keyword. For more details on each component, please refer to the repo.
-
-### Stages
-
-#### Build
-
-The `build` job is responsible for building the Docker image for the project. It uses Docker's BuildKit to speed up the build process. This job is run on every commit, excluding those tagged for release.
-
-It pushes a **candidate Docker image** for user in subsequent jobs as it is not trusted yet.
-
-#### Test
-
-The `test` stage includes the `unit-test` and `format-test` job, which runs unit tests on the project using the **candidate Docker image** built in the `build` stage. This job is also run on every commit, excluding those tagged for release.
-
-#### Publish
-
-The `publish` stage includes two jobs:
-
-- `publish-develop`: This job publishes the **candidate Docker image** to the gitlab Docker registry, tagging it `develop-branch-latest`. It only runs on commits to the `develop` branch.
-- `publish-tagged_and_latest`: This job publishes the **candidate Docker image**, tagging it `latest` and `$SEM_VER` i.e. the git tag version. It only runs on tagged commits.
-
-## Development Installation
-
-This section provides a guide on how to set up your development environment to
-contribute to this project. We use Poetry for dependency management
-and provide two different setup options: *Local/Remote setup* and *VSCode
-devcontainer setup*.
 
 ### Local/Remote Machine Setup
 
