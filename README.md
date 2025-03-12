@@ -1,6 +1,6 @@
 # fur_hotspot_mutations
 
-This repository contians code and analysis results for identifying artefacts and rescuing false negative variant calls in the FUR Felis Catus dataset.
+
 
 |                         Main                         |                         Develop                          |
 | :----------------------------------------------------: | :------------------------------------------------------: |
@@ -10,6 +10,21 @@ This repository contians code and analysis results for identifying artefacts and
 [main-branch]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/-/commits/main
 [develop-pipe-badge]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/badges/develop/pipeline.svg
 [develop-branch]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/-/commits/develop
+
+
+## Summary
+
+This repository contains code for identifying artifacts and rescuing false-negative variant calls from Caveman and Pindel calls. It also includes analysis results produced from the FUR Felis Catus dataset.
+In brief, the tool takes an input MAF file (generated with the Dermatlas processing pipeline) that describes a cohort of tumors and identifies hotspot mutations within the cohort. The tool then generates a read pileup for each hotspot locus in each sample and counts the number of reads attributable to alternative alleles in the pileup.
+Hotspot mutations in the MAF are then evaluated against several criteria:
+
+Is the variant allele frequency (VAF) > 1%?
+Is the number of ALT allele reads in the tumor sample > 5?
+Is the number of ALT allele reads in the normal sample < 3?
+
+When these criteria are met, the mutation is considered a false-negative and new occurrences of the hotspot mutation are added to the MAF file. Conversely, in samples where an identified hotspot mutation fails to meet these criteria, it is considered a false positive variant and removed from the MAF.
+The tool also looks at calls at the cohort level. When the number of tumor-normal pairs flagged as false negatives for a variant is greater than 3, the variant is reclassified as a germline mutation and removed.
+
 
 
 ## Table of Contents
@@ -23,7 +38,7 @@ This repository contians code and analysis results for identifying artefacts and
 ├── .devcontainer
 │   └── devcontainer.json    # Used by VSCode to create a development container
 ├── cicd_scripts/
-│   ├── build_package_and_publish.sh       # Publishes the package to the Gitlab PyPi registry
+│   ├── build_package_and_publish.sh       # Publishes the package to the Sanger Gitlab PyPi registry
 │   └── format_test.sh       # CI/CD script to run formatting and linting
 ├── .dockerignore
 ├── .gitignore
@@ -51,107 +66,9 @@ The project's CI/CD pipeline is configured in `.gitlab-ci.yml` and comprises thr
 
 #### Prerequisites:
  -  Python 3.9 (or later) installed
-    - (if on the farm, do `module load python/3.9.2` or similar)
  - Poetry installed
-    - if on the farm, do `module load /software/team113/modules/modulefiles/poetry/1.8.2`
-    - if on the farm and can't access the module, create a virtual env and install `poetry` (will be covered below)
-    - if on you are on OpenStack or local machine, follow the [official instructions here](https://python-poetry.org/docs/#installation)
+    - Follow the [official instructions here](https://python-poetry.org/docs/#installation)
 - Git + hubflow installed
-    - if on the farm, do `module load /software/CASM/modules/modulefiles/git/2.21.0`
-    - if on your own machine or OpenStack, follow the [official instructions here](https://datasift.github.io/gitflow/TheHubFlowTools.html)
-
-#### Setup steps:
-1. `git clone` this repo and `cd` into it
-1. Create a python virtual environment (venv) and activate it
-    - `python -m venv .venv`
-    - `source .venv/bin/activate`
-1. Optional, install poetry in the venv if you can't access the module on the farm
-    - `pip install poetry==1.8.2`
-1. Once you are in a virtual env, do `poetry install` to install all the Python dependencies.
-   * If you experience any of the following exceptions `PromptDismissedException`, `ItemNotFoundException`, `DBusErrorResponse`, `InitError`, there may be an issue with the configuration of keyrings in Linux. This is a Poetry ^1.4.0 issue. To fix it:
-     * `export PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring` then `poetry install`
-1. Do `git hf init` to intialise the local version of the repo with *Hubflow*
-1. Do `pre-commit install --install-hooks` to install your local git hooks (linting, formatting)
-
-### VSCode Devcontainer Setup
-
-This setup allows you to develop this project inside a Docker container using
-Visual Studio Code's Dev Container feature. This setup provides a **consistent** and
-fully featured development environment, which includes all the necessary tools
-and packages.
-
-**It cannot be understated that this setup is very consistent but cannot be done
-on the farm**. It is recommended to use this setup on your own machine or on
-OpenStack.
-
-The files which enable you to work from within an container can be found in
-`.devcontainer/devcontainer.json`. This turns the Docker image into a
-development Docker image.
-
-#### Prerequisites:
-- Docker installed (either locally or on OpenStack)
-- Visual Studio Code installed
-  - You can download it [here](https://code.visualstudio.com/download).
-- "Remote - Containers" extension installed in VSCode
-  - You can install the extension directly from the [Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) or by searching for "Remote Containers" in the VSCode Extensions view
-
-#### Setup steps:
-1. `git clone` this repo and `cd` into it
-1. Open the project in VSCode.
-1. Start the Dev Container.
-
-   Click on the green "open a remote window" button in the lower left corner of VSCode, or use the `F1` command palette and select "Remote-Containers: Reopen in Container". This will start building the Docker container as described in the project's `.devcontainer/devcontainer.json` file. The build process can take a few minutes when run for the first time.
-
-1. Wait for the Dev Container to be built.
-
-   VSCode will use the configuration in the `.devcontainer` folder of the project to build a Docker container, install all necessary software, and open a VSCode window connected to that container.
-
-1. Setup `git` in the container.
-
-   The container is a fresh environment, so you'll need to configure `git` to use your name and email address. You can do this by running the following commands in the terminal in VSCode:
-
-   ```bash
-   git config --global user.name "Your Name"
-   git config --global user.email "your@email.com"
-
-   # You can check git is work in the container by running
-   git fetch
-   ```
-
-   **IMPORTANT**: The SSH keys you use to authenticate with Gitlab are proxied into the container through a Linux socket, so you don't need to do anything else to authenticate with Gitlab... but [troubleshooting advice is here](https://code.visualstudio.com/remote/advancedcontainers/sharing-git-credentials). Where the instructions mention `github_rsa` it may just be `id_rsa` for you.
-
-   **IMPORTANT**: The ssh public key that is sent through the socket comes from your **LOCAL MACHINE** i.e. your Sanger laptop and not the remote OpenStack host. This is not obvious. You will need to add your Sanger laptop's public key to your Gitlab account. You can find your public key by running `cat ~/.ssh/id_rsa.pub` on your Sanger laptop. It is also important to ensure the ssh key-agent is running on your Sanger laptop. You can check this by running `eval "$(ssh-agent -s)"` on your Sanger laptop; otherwise you will need to update you ssh config to start the agent on startup or your bashrc.
-
-1. Start Developing!
-
-   Once VSCode connects to the container, you're in the development environment defined by the container! The terminal in VSCode now runs inside the container, and you should have all the tools you need for development pre-installed: `hubflow`, `poetry`, `pre-commit`, and all the Python dependencies. You can even commit from within the container!
-
-Please check the [official VSCode documentation](https://code.visualstudio.com/docs/devcontainers/containers) for more detailed information on developing inside a container with VSCode.
-
-### Building with Docker
-
-While VSCode is the recommended way to develop this project as it handle the setup of the Docker container and the installation of all the dependencies, you can also build the Docker container manually.
-
-```bash
-# Build the Docker image (buildkit is required), without using the cache and targeting the base_stage only
-export DOCKER_BUILDKIT=1
-MY_IMAGE="fur_hotspot_mutations:local"
-docker build -t $MY_IMAGE --target base_stage --no-cache .
-
-# Run the Docker container
-docker run --rm $MY_IMAGE add 4.5 5.6 # example command
-docker run -it --rm $MY_IMAGE bash # to enter an interactive bash shell in the container
-```
-
-If you use docker-compose, you can also build and run the container indefinitely, with the src & test directories mounted as volumes:
-
-```bash
-# Build & run the Docker image in the background
-docker compose up --build -d
-docker container ls # to find the container name
-docker exec -it <container_name> bash # to enter an interactive bash shell in the container
-```
-
 
 ## Running Tests
 
