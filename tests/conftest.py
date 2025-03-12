@@ -21,7 +21,7 @@ def mock_file_path(tmp_path):
 
 @pytest.fixture
 def maf() -> Path:
-    raw_maf_dir = os.environ.get(ENV_VAR_MAF_DIR, "")
+    raw_maf_dir = os.environ.get(ENV_VAR_MAF_DIR, "tests/mocks")
     maf_dir = Path(raw_maf_dir)
     expected_maf = "keepPA_vaf_size_filt_matched_6711_2820.maf"
     maf = maf_dir / expected_maf
