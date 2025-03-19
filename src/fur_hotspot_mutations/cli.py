@@ -6,6 +6,7 @@ from fur_hotspot_mutations import (
     extract_hotspot_mutations,
     mpileup_variant_filter,
     update_maf_variants,
+    check_mpileup_samples_from_maf,
 )
 from utils import constants
 
@@ -29,6 +30,7 @@ def main():
     _ = extract_hotspot_mutations.get_argparser(subparser=subparsers)
     _ = mpileup_variant_filter.get_argparser(subparser=subparsers)
     _ = update_maf_variants.get_argparser(subparser=subparsers)
+    _ = check_mpileup_samples_from_maf.get_argparser(subparser=subparsers)
 
     # Parse the arguments
     args = parser.parse_args()
@@ -42,6 +44,8 @@ def main():
             exit_code = mpileup_variant_filter.main(args)
         case update_maf_variants.COMMAND_NAME:
             exit_code = update_maf_variants.main(args)
+        case check_mpileup_samples_from_maf.COMMAND_NAME:
+            exit_code = check_mpileup_samples_from_maf.main(args)
         case _:
             # Unlikley to see this error as the subparsers as
             # parser.parse_args() will catch unknown commands

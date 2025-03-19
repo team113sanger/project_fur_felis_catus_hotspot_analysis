@@ -94,6 +94,10 @@ def test_cli__help():
             utils.constants.COMMAND_NAME__UPDATE_MAF_VARIANTS,
             id="update_maf_variants",
         ),
+        pytest.param(
+            utils.constants.COMMAND_NAME__CHECK_MPILEUP_SAMPLES_FROM_MAF,
+            id="check_mpileup_samples_from_maf",
+        ),
     ],
 )
 def test_cli__command__help(command: str):

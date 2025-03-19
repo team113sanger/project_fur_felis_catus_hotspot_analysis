@@ -45,7 +45,9 @@ DESCRIPTION__UPDATE_MAF_VARIANTS: str = (
     "according to a variant file, and then writes the updated variants "
     "to a new MAF file."
 )
-DESCRIPTION__CHECK_MPILEUP_SAMPLES_FROM_MAF: str = ""
+DESCRIPTION__CHECK_MPILEUP_SAMPLES_FROM_MAF: str = (
+    "Process MAF and BAM files to analyze genetic variants using samtools mpileup."
+)
 
 
 # Command short-help
@@ -56,4 +58,6 @@ SHORT_HELP__EXTRACT_HOTSPOT_MUTATIONS: str = (
 )
 SHORT_HELP__MPILEUP_VARIANT_FILTER: str = "Filter variant calls using mpileup data."
 SHORT_HELP__UPDATE_MAF_VARIANTS: str = "Add or remove variants in a MAF file."
-SHORT_HELP__CHECK_MPILEUP_SAMPLES_FROM_MAF: str = ""
+SHORT_HELP__CHECK_MPILEUP_SAMPLES_FROM_MAF: str = (
+    "Process MAF and BAM files using samtools mpileup."
+)

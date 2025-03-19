@@ -1,26 +1,43 @@
-#!/usr/bin/env python3
-
+import typing as t
 import sys
 import os
 import subprocess
 import statistics
 import re
 import argparse
+import warnings
 
 from utils.logging_utils import setup_logging, update_logger_level
+from utils import constants
 
 LOGGER = setup_logging(name="VariantProcessor")
 
-# --- Command-line Argument Setup
+# CONSTANTS
+# This constant is referenced by functions in other modules (e.g. cli.py)
+# so do not factor it out.
+COMMAND_NAME = constants.COMMAND_NAME__CHECK_MPILEUP_SAMPLES_FROM_MAF
 
 
-def parse_arguments():
+# FUNCTIONS
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Parses command-line arguments and returns them.
+    Either returns a new ArgumentParser instance or a subparser for the update_maf_variants command.
+
+    A subparser is preferred, with unspecified behavior preserved for backwards
+    compatibility.
     """
-    parser = argparse.ArgumentParser(
-        description="Process MAF and BAM files to analyze genetic variants using samtools mpileup."
-    )
+    description = constants.DESCRIPTION__CHECK_MPILEUP_SAMPLES_FROM_MAF
+
+    if subparser is None:
+        parser = argparse.ArgumentParser(description=description)
+    else:
+        short_help = constants.SHORT_HELP__CHECK_MPILEUP_SAMPLES_FROM_MAF
+        parser = subparser.add_parser(
+            COMMAND_NAME, description=description, help=short_help
+        )
+
     parser.add_argument(
         "bam_list_file", help="Path to the BAM list file containing paths to BAM files."
     )
@@ -49,7 +66,7 @@ def parse_arguments():
         default="INFO",
         help="Set the logging level (default: INFO)",
     )
-    return parser.parse_args()
+    return parser
 
 
 # --- File Validation and Reading ---
@@ -861,14 +878,10 @@ def process_variants(
 # --- Main Function ---
 
 
-def main():
+def main(args: argparse.Namespace):
     """
     Main function to parse command-line arguments and orchestrate variant processing.
     """
-    LOGGER.info("Variant processing script started.")
-
-    # Parse command-line arguments
-    args = parse_arguments()
 
     bam_list_file = args.bam_list_file
     maf_list_file = args.maf_list_file
@@ -879,6 +892,7 @@ def main():
     # Update logger level
     update_logger_level(LOGGER, level=args.log_level)
 
+    LOGGER.info("Variant processing script started.")
     LOGGER.debug(
         f"Command-line arguments received: bam_list_file={bam_list_file}, maf_list_file={maf_list_file}, reference_fasta={reference_fasta}, map_quality={map_quality}, base_quality={base_quality}"
     )
@@ -920,4 +934,17 @@ def main():
 # --- Entry Point ---
 
 if __name__ == "__main__":
-    main()
+    # The if-name-equals-main block is no-longer the preferred way to run scripts, as
+    # we have moved to using a unified entry point for the CLI.
+    #
+    # However for backwards compatibility we show the user a deprecation warning.
+    warnings.warn(
+        (
+            f"The script `{__file__}` should be run using the CLI program "
+            f"running `{constants.PROGRAM_NAME}`."
+        ),
+        FutureWarning,
+    )
+    parser = get_argparser(subparser=None)
+    args = parser.parse_args()
+    main(args)
