@@ -90,9 +90,13 @@ def test_cli__help():
             utils.constants.COMMAND_NAME__MPILEUP_VARIANT_FILTER,
             id="mpileup_variant_filter",
         ),
+        pytest.param(
+            utils.constants.COMMAND_NAME__UPDATE_MAF_VARIANTS,
+            id="update_maf_variants",
+        ),
     ],
 )
-def test_cli__command__help(command):
+def test_cli__command__help(command: str):
     # Given
     cmd = f"{PROGRAM_NAME} {command} --help"
 

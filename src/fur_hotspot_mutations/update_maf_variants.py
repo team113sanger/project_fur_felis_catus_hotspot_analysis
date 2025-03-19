@@ -3,26 +3,40 @@ import logging
 import sys
 from pathlib import Path
 import typing as t
+import warnings
 
 import pandas as pd
 
 from utils.maf_utils import is_maf_format
 from utils.logging_utils import setup_logging
+from utils import constants
+
+# CONSTANTS
+# This constant is referenced by functions in other modules (e.g. cli.py)
+# so do not factor it out.
+COMMAND_NAME = constants.COMMAND_NAME__UPDATE_MAF_VARIANTS
+
+# FUNCTIONS
 
 
-def parse_arguments() -> argparse.Namespace:
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Parse command-line arguments.
+    Either returns a new ArgumentParser instance or a subparser for the update_maf_variants command.
 
-    Returns:
-        argparse.Namespace: Parsed command-line arguments
+    A subparser is preferred, with unspecified behavior preserved for backwards
+    compatibility.
     """
-    logging.debug("Setting up argument parser.")
-    parser = argparse.ArgumentParser(
-        description="This script takes a MAF file as input, adds/removes variants "
-        "according to a variant file, and then writes the updated variants "
-        "to a new MAF file."
-    )
+    description = constants.DESCRIPTION__UPDATE_MAF_VARIANTS
+    if subparser is None:
+        parser = argparse.ArgumentParser(description=description)
+    else:
+        short_help = constants.SHORT_HELP__UPDATE_MAF_VARIANTS
+        parser = subparser.add_parser(
+            COMMAND_NAME, description=description, help=short_help
+        )
+
     parser.add_argument(
         "-i", "--input_maf", type=Path, required=True, help="Path to the input MAF file"
     )
@@ -51,13 +65,7 @@ def parse_arguments() -> argparse.Namespace:
         help="Path to the output MAF file containing the updated variants",
     )
 
-    args = parser.parse_args()
-    logging.debug("Arguments parsed successfully:")
-    logging.debug(f"  input_maf: {args.input_maf}")
-    logging.debug(f"  variant_file: {args.variant_file}")
-    logging.debug(f"  mpileup_file: {args.mpileup_file}")
-    logging.debug(f"  output_maf: {args.output_maf}")
-    return args
+    return parser
 
 
 # General utility functions
@@ -755,16 +763,20 @@ def process_variants(
     logging.info("Successfully finished processing variants.")
 
 
-def main() -> int:
+def main(args: argparse.Namespace) -> int:
     """
     Main entry point for command-line execution.
 
     Returns:
         int: Return code (0 for success, non-zero for errors).
     """
+    setup_logging()
+    logging.debug("Arguments parsed successfully:")
+    logging.debug(f"  input_maf: {args.input_maf}")
+    logging.debug(f"  variant_file: {args.variant_file}")
+    logging.debug(f"  mpileup_file: {args.mpileup_file}")
+    logging.debug(f"  output_maf: {args.output_maf}")
     try:
-        setup_logging()
-        args = parse_arguments()
         process_variants(
             args.input_maf, args.variant_file, args.mpileup_file, args.output_maf
         )
@@ -778,4 +790,17 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # The if-name-equals-main block is no-longer the preferred way to run scripts, as
+    # we have moved to using a unified entry point for the CLI.
+    #
+    # However for backwards compatibility we show the user a deprecation warning.
+    warnings.warn(
+        (
+            f"The script `{__file__}` should be run using the CLI program "
+            f"running `{constants.PROGRAM_NAME}`."
+        ),
+        FutureWarning,
+    )
+    parser = get_argparser(subparser=None)
+    args = parser.parse_args()
+    sys.exit(main(args))

@@ -15,6 +15,7 @@ PROGRAM_NAME: str = "fur_hotspot_mutations"
 # subcommand to run.
 COMMAND_NAME__EXTRACT_HOTSPOT_MUTATIONS: str = "extract_hotspot_mutations"
 COMMAND_NAME__MPILEUP_VARIANT_FILTER: str = "mpileup_variant_filter"
+COMMAND_NAME__UPDATE_MAF_VARIANTS: str = "update_maf_variants"
 
 # Program & Command descriptions
 #
@@ -36,6 +37,11 @@ DESCRIPTION__MPILEUP_VARIANT_FILTER: str = (
     "Uses thresholds determined by the user to decide whether a given mutation "
     "should be included/excluded in the final callset."
 )
+DESCRIPTION__UPDATE_MAF_VARIANTS: str = (
+    "This command takes a MAF file as input, adds/removes variants "
+    "according to a variant file, and then writes the updated variants "
+    "to a new MAF file."
+)
 
 
 # Command short-help
@@ -45,3 +51,4 @@ SHORT_HELP__EXTRACT_HOTSPOT_MUTATIONS: str = (
     "Identify and extract hotspot mutations from a MAF file."
 )
 SHORT_HELP__MPILEUP_VARIANT_FILTER: str = "Filter variant calls using mpileup data."
+SHORT_HELP__UPDATE_MAF_VARIANTS: str = "Add or remove variants in a MAF file."
