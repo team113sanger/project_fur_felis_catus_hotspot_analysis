@@ -1,14 +1,15 @@
 import typing as t
 import argparse
-import logging
 from pathlib import Path
 import warnings
 
 import pandas as pd
 
-from utils.logging_utils import setup_logging
+from utils.logging_utils import setup_logging, update_logger_level
 from utils.maf_utils import is_maf_format
 from utils import constants
+
+LOGGER = setup_logging()
 
 # CONSTANTS
 # This constant is referenced by functions in other modules (e.g. cli.py)
@@ -63,6 +64,13 @@ def get_argparser(
         required=True,
         help="Path to the output MAF file where extracted hotspot mutations will be saved.",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Set the logging level (default: INFO)",
+    )
 
     return parser
 
@@ -85,7 +93,7 @@ def extract_hotspot_mutations(
     Returns:
     pd.DataFrame: DataFrame of the hotspot mutations.
     """
-    logging.info(f"Extracting hotspot mutations from {str(maf_file)} ...")
+    LOGGER.info(f"Extracting hotspot mutations from {str(maf_file)} ...")
 
     # Load the MAF file into a DataFrame
     maf_df = pd.read_csv(maf_file, sep="\t", comment="#", low_memory=False)
@@ -134,7 +142,7 @@ def extract_hotspot_mutations(
     )
 
     # Filter for mutations occurring in at least the minimum number of samples
-    logging.info(
+    LOGGER.info(
         f"Identifying hotspot muations present in at least {min_samples} samples ..."
     )
     hotspot_mutations = grouped[grouped["Tumor_Sample_Barcode"] >= min_samples]
@@ -171,7 +179,7 @@ def extract_hotspot_mutations(
     # Save the hotspot mutations to a new MAF file (if required)
     if save_to_file and output_maf:
         hotspot_maf.to_csv(output_maf, sep="\t", index=False)
-        logging.info(
+        LOGGER.info(
             f"Output MAF file with hotspot mutations written to {str(output_maf)}"
         )
 
@@ -179,15 +187,15 @@ def extract_hotspot_mutations(
 
 
 def main(args: argparse.Namespace) -> None:
-    setup_logging()
     # Parse command line arguments
     input_maf = args.i[0]
     min_samples = args.m[0]
     output_maf = args.o[0]
+    update_logger_level(LOGGER, args.log_level)
 
-    logging.debug(f"Input MAF: {input_maf}")
-    logging.debug(f"Minimum number of samples: {min_samples}")
-    logging.debug(f"Output MAF: {output_maf}")
+    LOGGER.debug(f"Input MAF: {input_maf}")
+    LOGGER.debug(f"Minimum number of samples: {min_samples}")
+    LOGGER.debug(f"Output MAF: {output_maf}")
 
     # Check if input file is in MAF format
     if is_maf_format(input_maf):
