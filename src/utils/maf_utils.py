@@ -1,7 +1,10 @@
 import csv
-import logging
 from pathlib import Path
 from typing import Generator, List, Optional
+
+from utils.logging_utils import setup_logging
+
+LOGGER = setup_logging()
 
 # CONSTANTS
 EXPECTED_COLUMNS = {
@@ -44,7 +47,7 @@ def _read_file(file_path: Path) -> Generator[List[str], None, None]:
                 if row and not row[0].startswith("#"):  # Skip empty and comment lines
                     yield row
     except Exception as e:
-        logging.exception(f"Error reading {file_path}: {e}")
+        LOGGER.exception(f"Error reading {file_path}: {e}")
         raise
 
 
@@ -68,7 +71,7 @@ def _validate_header(header: List[str], file_path: Path) -> Optional[List[str]]:
     normalized_header = [col.strip().lower() for col in header]
     missing_columns = EXPECTED_COLUMNS - set(normalized_header)
     if missing_columns:
-        logging.warning(
+        LOGGER.warning(
             f"{file_path} is missing the following expected MAF columns: {', '.join(missing_columns)}"
         )
         return None
@@ -98,13 +101,13 @@ def _validate_positions(
         start_pos = int(row[header_index["start_position"]])
         end_pos = int(row[header_index["end_position"]])
         if start_pos > end_pos:
-            logging.warning(
+            LOGGER.warning(
                 f"Invalid positions on line {line_number} in {file_path}: "
                 f"Start_Position ({start_pos}) > End_Position ({end_pos})."
             )
             return False
     except ValueError:
-        logging.warning(
+        LOGGER.warning(
             f"Non-integer positions found on line {line_number} in {file_path}: "
             f"Start_Position or End_Position is not an integer."
         )
@@ -128,12 +131,12 @@ def _validate_data_lines(
     Returns:
         bool: True if all rows are valid; False otherwise.
     """
-    logging.info("Validating MAF data lines ...")
+    LOGGER.info("Validating MAF data lines ...")
     header_index = {col: idx for idx, col in enumerate(header)}
     for line_number, row in enumerate(lines, start=2):  # Start after header
         if not _validate_positions(row, line_number, file_path, header_index):
             return False
-    logging.info("Successfully validated MAF data lines.")
+    LOGGER.info("Successfully validated MAF data lines.")
     return True
 
 
@@ -151,17 +154,17 @@ def _check_for_duplicates(file_path: Path) -> bool:
     Logs:
         A warning if duplicates are detected or if the file has no valid lines.
     """
-    logging.info(f"Checking {file_path} for duplicate lines ...")
+    LOGGER.info(f"Checking {file_path} for duplicate lines ...")
     result = _detect_duplicates(file_path)
     if result is None:
-        logging.warning(
+        LOGGER.warning(
             f"The file {file_path} contains no valid lines (empty or only comments)."
         )
         return False
     if result:
-        logging.warning(f"The file {file_path} contains duplicate lines.")
+        LOGGER.warning(f"The file {file_path} contains duplicate lines.")
         return False
-    logging.info(f"No duplicates found in {file_path}.")
+    LOGGER.info(f"No duplicates found in {file_path}.")
     return True
 
 
@@ -206,7 +209,7 @@ def _is_duplicate(
     """
     line_str = "\t".join(row)
     if line_str in seen:
-        logging.warning(
+        LOGGER.warning(
             f"Duplicate line found in {file_path}: Line {seen[line_str]} and Line {line_number}."
         )
         return True
@@ -229,7 +232,7 @@ def _handle_no_lines_checked(lines_checked: int, file_path: Path) -> Optional[bo
         A warning if the file contains no valid lines.
     """
     if lines_checked == 0:
-        logging.warning(f"The file {file_path} contains no valid lines.")
+        LOGGER.warning(f"The file {file_path} contains no valid lines.")
         return None
     return False
 
@@ -248,24 +251,24 @@ def _check_column_consistency(file_path: Path) -> bool:
     Logs:
         A warning if column counts are inconsistent or if the file is empty.
     """
-    logging.info(f"Checking {file_path} for consistent column counts ...")
+    LOGGER.info(f"Checking {file_path} for consistent column counts ...")
     try:
         with file_path.open("r", newline="") as file:
             reader = csv.reader(file, delimiter="\t")
             rows = list(reader)
             if not rows:
-                logging.warning(f"The file {file_path} is empty.")
+                LOGGER.warning(f"The file {file_path} is empty.")
                 return False
             expected_columns = len(rows[0])
             if all(len(row) == expected_columns for row in rows):
-                logging.info(
+                LOGGER.info(
                     f"Successfully checked {file_path} for consistent column counts."
                 )
                 return True
-            logging.warning(f"The file {file_path} has inconsistent column counts.")
+            LOGGER.warning(f"The file {file_path} has inconsistent column counts.")
             return False
     except Exception as e:
-        logging.exception(f"Error checking for consistent columns in {file_path}: {e}")
+        LOGGER.exception(f"Error checking for consistent columns in {file_path}: {e}")
         return False
 
 
@@ -304,7 +307,7 @@ def _validate_header_and_data(file_path: Path) -> bool:
     lines = _read_file(file_path)
     header = next(lines, None)  # Get the first line (header)
     if not header:
-        logging.warning(f"No header found in {file_path}.")
+        LOGGER.warning(f"No header found in {file_path}.")
         return False
     normalized_header = _validate_header(header, file_path)
     if not normalized_header:
@@ -333,5 +336,5 @@ def is_maf_format(file_path: Path) -> bool:
             return False
         return True
     except Exception as e:
-        logging.exception(f"Error validating MAF format for {file_path}: {e}")
+        LOGGER.exception(f"Error validating MAF format for {file_path}: {e}")
         return False

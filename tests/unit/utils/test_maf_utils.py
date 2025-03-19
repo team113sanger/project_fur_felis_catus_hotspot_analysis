@@ -11,6 +11,8 @@ from utils.maf_utils import (
     _check_column_consistency,
 )
 
+from utils import constants
+
 # TESTS
 
 
@@ -115,7 +117,7 @@ def test_check_for_duplicates(mock_file_path: Path, caplog):
     # Test that the function logs a warning when a duplicate line is found
     duplicate_data = "line1\nline2\nline3\nline1\nline4\n"
     with patch("pathlib.Path.open", mock_open(read_data=duplicate_data)):
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
             _check_for_duplicates(mock_file_path)
         assert (
             "Duplicate line found" in caplog.text and "Line 1 and Line 4" in caplog.text
@@ -124,7 +126,7 @@ def test_check_for_duplicates(mock_file_path: Path, caplog):
     # Test with an empty file
     empty_data = ""
     with patch("pathlib.Path.open", mock_open(read_data=empty_data)):
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
             result = _check_for_duplicates(mock_file_path)
         assert result is False, "The function should return False for an empty file."
         assert (
@@ -134,7 +136,7 @@ def test_check_for_duplicates(mock_file_path: Path, caplog):
     # Test with a file containing only comment lines
     comments_only_data = "# Comment 1\n# Comment 2\n"
     with patch("pathlib.Path.open", mock_open(read_data=comments_only_data)):
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
             result = _check_for_duplicates(mock_file_path)
         assert (
             result is False
