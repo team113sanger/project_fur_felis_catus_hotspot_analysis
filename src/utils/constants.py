@@ -14,6 +14,7 @@ PROGRAM_NAME: str = "fur_hotspot_mutations"
 # Command names appear in the help message and are used to determine which
 # subcommand to run.
 COMMAND_NAME__EXTRACT_HOTSPOT_MUTATIONS: str = "extract_hotspot_mutations"
+COMMAND_NAME__MPILEUP_VARIANT_FILTER: str = "mpileup_variant_filter"
 
 # Program & Command descriptions
 #
@@ -30,6 +31,12 @@ DESCRIPTION__EXTRACT_HOTSPOT_MUTATIONS: str = (
     "Hotspot mutations are defined as identical mutations occurring at the same site in more than N samples. "
     "The extracted hotspot mutations are saved to a new MAF file."
 )
+DESCRIPTION__MPILEUP_VARIANT_FILTER: str = (
+    "Uses mpileup data to identify questionable variant calls. "
+    "Uses thresholds determined by the user to decide whether a given mutation "
+    "should be included/excluded in the final callset."
+)
+
 
 # Command short-help
 #
@@ -37,3 +44,4 @@ DESCRIPTION__EXTRACT_HOTSPOT_MUTATIONS: str = (
 SHORT_HELP__EXTRACT_HOTSPOT_MUTATIONS: str = (
     "Identify and extract hotspot mutations from a MAF file."
 )
+SHORT_HELP__MPILEUP_VARIANT_FILTER: str = "Filter variant calls using mpileup data."

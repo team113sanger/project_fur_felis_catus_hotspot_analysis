@@ -1,8 +1,8 @@
 import argparse
 
 import fur_hotspot_mutations
-from fur_hotspot_mutations import extract_hotspot_mutations
-from utils import constants, logging_utils
+from fur_hotspot_mutations import extract_hotspot_mutations, mpileup_variant_filter
+from utils import constants
 
 
 def main():
@@ -22,19 +22,18 @@ def main():
 
     # Parsers for each command are set up by their respective modules
     _ = extract_hotspot_mutations.get_argparser(subparser=subparsers)
-    _ = subparsers.add_parser("two", help="command two help")  # TODO: replace
+    _ = mpileup_variant_filter.get_argparser(subparser=subparsers)
 
     # Parse the arguments
     args = parser.parse_args()
 
     # Call the appropriate function based on the command from their respective
     # modules
-    logging_utils.setup_logging()
     match args.command:
         case extract_hotspot_mutations.COMMAND_NAME:
             extract_hotspot_mutations.main(args)
-        case "two":
-            do_two(args)
+        case mpileup_variant_filter.COMMAND_NAME:
+            mpileup_variant_filter.main(args)
         case _:
             # Unlikley to see this error as the subparsers as
             # parser.parse_args() will catch unknown commands
@@ -44,8 +43,3 @@ def main():
             )
 
     return None
-
-
-def do_two(args: argparse.Namespace) -> None:  # TODO: remove
-    print("Doing two")
-    print(args)

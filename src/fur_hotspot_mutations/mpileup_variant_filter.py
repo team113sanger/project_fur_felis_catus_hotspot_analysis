@@ -1,34 +1,43 @@
+import typing as t
 import argparse
 import csv
 import logging
 from pathlib import Path
 from typing import Union
+import warnings
 
 import pandas as pd
 
-
-def setup_logging(level):
-    """
-    Configures the logging settings for the script.
-    """
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+from utils.logging_utils import setup_logging
+from utils import constants
 
 
-def parse_arguments():
-    """
-    Parses command-line arguments provided by the user.
+# CONSTANTS
+# This constant is referenced by functions in other modules (e.g. cli.py)
+# so do not factor it out.
+COMMAND_NAME = constants.COMMAND_NAME__MPILEUP_VARIANT_FILTER
 
-    Returns:
-        argparse.Namespace: An object containing parsed command-line arguments.
+# FUNCTIONS
+
+
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    parser = argparse.ArgumentParser(
-        description="Uses mpileup data to identify questionable variant calls. "
-        "Uses thresholds determined by the user to decide whether a given mutation "
-        "should be included/excluded in the final callset."
-    )
+    Either returns a new ArgumentParser instance or a subparser for the
+    mpileup_variant_filter command.
+
+    A subparser is preferred, with unspecified behavior preserved for backwards
+    compatibility.
+    """
+    description = constants.DESCRIPTION__MPILEUP_VARIANT_FILTER
+    if subparser is None:
+        parser = argparse.ArgumentParser(description=description)
+    else:
+        short_help = constants.SHORT_HELP__MPILEUP_VARIANT_FILTER
+        parser = subparser.add_parser(
+            COMMAND_NAME, description=description, help=short_help
+        )
 
     parser.add_argument(
         "-m",
@@ -100,7 +109,7 @@ def parse_arguments():
         help="Set the logging level (default: INFO)",
     )
 
-    return parser.parse_args()
+    return parser
 
 
 # -----------------------------------------------------------------------------
@@ -891,8 +900,12 @@ def process_false_negatives(
 # -----------------------------------------------------------------------------
 # MAIN PIPELINE
 # -----------------------------------------------------------------------------
-def main():
-    args = parse_arguments()
+def main(args: argparse.Namespace):
+    """
+    Main pipeline to process mpileup data and identify questionable variants for
+    potential addition/removal from a MAF file.
+    """
+
     mpileup_file = args.mpileup_file
     tn_pairs_file = args.tn_pairs_file
     variant_file = args.variant_file
@@ -937,4 +950,18 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    # The if-name-equals-main block is no-longer the preferred way to run scripts, as
+    # we have moved to using a unified entry point for the CLI.
+    #
+    # However for backwards compatibility we show the user a deprecation warning.
+    warnings.warn(
+        (
+            f"The script `{__file__}` should be run using the CLI program "
+            f"running `{constants.PROGRAM_NAME}`."
+        ),
+        FutureWarning,
+    )
+    logging.info("Parsing command line arguments ...")
+    parser = get_argparser(subparser=None)
+    args = parser.parse_args()
+    main(args)

@@ -2,6 +2,8 @@ import subprocess
 import shlex
 import shutil
 
+import pytest
+
 import fur_hotspot_mutations
 import utils.constants
 
@@ -77,9 +79,21 @@ def test_cli__help():
     assert PROGRAM_NAME in subproces_result.stdout
 
 
-def test_cli__extract_hotspot_mutations__help():
+@pytest.mark.parametrize(
+    "command",
+    [
+        pytest.param(
+            utils.constants.COMMAND_NAME__EXTRACT_HOTSPOT_MUTATIONS,
+            id="extract_hotspot_mutations",
+        ),
+        pytest.param(
+            utils.constants.COMMAND_NAME__MPILEUP_VARIANT_FILTER,
+            id="mpileup_variant_filter",
+        ),
+    ],
+)
+def test_cli__command__help(command):
     # Given
-    command = "extract_hotspot_mutations"
     cmd = f"{PROGRAM_NAME} {command} --help"
 
     # When
