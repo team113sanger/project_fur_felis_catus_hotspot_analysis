@@ -179,6 +179,7 @@ def extract_hotspot_mutations(
 
 
 def main(args: argparse.Namespace) -> None:
+    setup_logging()
     # Parse command line arguments
     input_maf = args.i[0]
     min_samples = args.m[0]
@@ -200,7 +201,6 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
-    setup_logging()
     # The if-name-equals-main block is no-longer the preferred way to run scripts, as
     # we have moved to using a unified entry point for the CLI.
     #
@@ -212,7 +212,6 @@ if __name__ == "__main__":
         ),
         FutureWarning,
     )
-    logging.info("Parsing command line arguments ...")
     parser = get_argparser(subparser=None)
     args = parser.parse_args()
     main(args)
