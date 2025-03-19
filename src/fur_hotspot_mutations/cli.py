@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 import fur_hotspot_mutations
 from fur_hotspot_mutations import (
@@ -36,11 +37,11 @@ def main():
     # modules
     match args.command:
         case extract_hotspot_mutations.COMMAND_NAME:
-            extract_hotspot_mutations.main(args)
+            exit_code = extract_hotspot_mutations.main(args)
         case mpileup_variant_filter.COMMAND_NAME:
-            mpileup_variant_filter.main(args)
+            exit_code = mpileup_variant_filter.main(args)
         case update_maf_variants.COMMAND_NAME:
-            update_maf_variants.main(args)
+            exit_code = update_maf_variants.main(args)
         case _:
             # Unlikley to see this error as the subparsers as
             # parser.parse_args() will catch unknown commands
@@ -48,5 +49,9 @@ def main():
                 argument=None,
                 message=f"Invalid command - {args.command}",
             )
+
+    # Exit with the exit code from the called function
+    if exit_code is not None:
+        sys.exit(exit_code)
 
     return None
