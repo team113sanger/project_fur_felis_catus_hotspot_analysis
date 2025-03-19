@@ -1,15 +1,16 @@
+import typing as t
 import argparse
-import logging
 import sys
 from pathlib import Path
-import typing as t
 import warnings
 
 import pandas as pd
 
 from utils.maf_utils import is_maf_format
-from utils.logging_utils import setup_logging
+from utils.logging_utils import setup_logging, update_logger_level
 from utils import constants
+
+LOGGER = setup_logging()
 
 # CONSTANTS
 # This constant is referenced by functions in other modules (e.g. cli.py)
@@ -65,6 +66,14 @@ def get_argparser(
         help="Path to the output MAF file containing the updated variants",
     )
 
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        default="INFO",
+        help="Set the logging level (default: INFO)",
+    )
+
     return parser
 
 
@@ -81,7 +90,7 @@ def _validate_file_exists(file_path: Path) -> None:
     Raises:
         ValueError: If the file does not exist.
     """
-    logging.debug(f"Validating existence of file: {file_path}")
+    LOGGER.debug(f"Validating existence of file: {file_path}")
     if not file_path.exists():
         raise ValueError(
             f"Error: {file_path} does not exist. Please check the file path."
@@ -102,11 +111,11 @@ def _check_required_columns(
     Raises:
         ValueError: If the DataFrame is missing any required columns.
     """
-    logging.info(f"Checking {file_label} DataFrame for required columns ...")
+    LOGGER.info(f"Checking {file_label} DataFrame for required columns ...")
     for col in required_columns:
         if col not in df.columns:
             raise ValueError(f"{file_label} file is missing required column: {col}")
-    logging.info(f"Successfully checked {file_label} file for required columns.")
+    LOGGER.info(f"Successfully checked {file_label} file for required columns.")
 
 
 def _convert_chromosome_df_column_to_string(df: pd.DataFrame) -> pd.DataFrame:
@@ -122,10 +131,10 @@ def _convert_chromosome_df_column_to_string(df: pd.DataFrame) -> pd.DataFrame:
     Raises:
         KeyError: If 'Chromosome' column is not present in the given dataframe.
     """
-    logging.debug("Converting 'Chromosome' column to string type.")
+    LOGGER.debug("Converting 'Chromosome' column to string type.")
     if "Chromosome" in df.columns:
         df["Chromosome"] = df["Chromosome"].astype(str)
-        logging.debug("Successfully converted 'Chromosome' column to string.")
+        LOGGER.debug("Successfully converted 'Chromosome' column to string.")
     else:
         raise KeyError("'Chromosome' column is not present in the given dataframe.")
     return df
@@ -146,14 +155,14 @@ def validate_and_load_maf_file(maf_file: Path) -> pd.DataFrame:
         ValueError: If the MAF file is not valid or does not exist.
     """
     _validate_file_exists(maf_file)
-    logging.info(f"Loading MAF file from {maf_file} into a DataFrame ...")
+    LOGGER.info(f"Loading MAF file from {maf_file} into a DataFrame ...")
 
     if is_maf_format(maf_file):
         maf_df = pd.read_csv(maf_file, sep="\t", comment="#")
         _convert_chromosome_df_column_to_string(maf_df)
-        logging.debug(f"MAF DataFrame preview:\n{maf_df.head()}")
-        logging.info(f"Successfully loaded {maf_file} into a DataFrame.")
-        logging.debug(f"MAF DataFrame shape: {maf_df.shape}")
+        LOGGER.debug(f"MAF DataFrame preview:\n{maf_df.head()}")
+        LOGGER.info(f"Successfully loaded {maf_file} into a DataFrame.")
+        LOGGER.debug(f"MAF DataFrame shape: {maf_df.shape}")
         return maf_df
     else:
         raise ValueError("Please provide a valid MAF file")
@@ -172,13 +181,11 @@ def _check_variant_df_action_column(variant_df: pd.DataFrame) -> None:
     Raises:
         ValueError: If the variant file contains unrecognized actions.
     """
-    logging.info(
-        "Checking that the Action column of the variant DataFrame is valid ..."
-    )
+    LOGGER.info("Checking that the Action column of the variant DataFrame is valid ...")
 
     expected_actions = {"ADD", "REMOVE"}
     unique_actions = variant_df["Action"].unique()
-    logging.debug(f"Unique actions found in variant file: {unique_actions}")
+    LOGGER.debug(f"Unique actions found in variant file: {unique_actions}")
 
     for action in unique_actions:
         if action not in expected_actions:
@@ -187,7 +194,7 @@ def _check_variant_df_action_column(variant_df: pd.DataFrame) -> None:
                 "Expected only ADD or REMOVE. Please check input data"
             )
 
-    logging.info("Successfully validated the Action column.")
+    LOGGER.info("Successfully validated the Action column.")
 
 
 def _validate_variant_df(variant_df: pd.DataFrame) -> None:
@@ -200,7 +207,7 @@ def _validate_variant_df(variant_df: pd.DataFrame) -> None:
     Raises:
         ValueError: If the DataFrame fails any validation checks.
     """
-    logging.info("Validating the variant DataFrame ...")
+    LOGGER.info("Validating the variant DataFrame ...")
 
     # Required columns for variant file
     required_columns = [
@@ -219,7 +226,7 @@ def _validate_variant_df(variant_df: pd.DataFrame) -> None:
     _convert_chromosome_df_column_to_string(variant_df)
     _check_variant_df_action_column(variant_df)
 
-    logging.info("Successfully validated the variant DataFrame.")
+    LOGGER.info("Successfully validated the variant DataFrame.")
 
 
 def _extract_variant_actions_from_variant_df(
@@ -237,8 +244,8 @@ def _extract_variant_actions_from_variant_df(
     contains_add_variants = "ADD" in variant_df["Action"].values
     contains_remove_variants = "REMOVE" in variant_df["Action"].values
 
-    logging.debug(f"Variant DataFrame contains ADD variants: {contains_add_variants}")
-    logging.debug(
+    LOGGER.debug(f"Variant DataFrame contains ADD variants: {contains_add_variants}")
+    LOGGER.debug(
         f"Variant DataFrame contains REMOVE variants: {contains_remove_variants}"
     )
 
@@ -260,14 +267,14 @@ def validate_and_load_variant_file(
             - A tuple indicating whether ADD/REMOVE variants are present.
     """
     _validate_file_exists(variant_file)
-    logging.info(f"Loading variant file from {variant_file} into a DataFrame ...")
+    LOGGER.info(f"Loading variant file from {variant_file} into a DataFrame ...")
     variant_df = pd.read_csv(variant_file, sep="\t", comment="#")
 
     _validate_variant_df(variant_df)
 
     variant_actions = _extract_variant_actions_from_variant_df(variant_df)
-    logging.debug(f"variant_actions: {variant_actions}")
-    logging.debug(f"Variant DataFrame shape: {variant_df.shape}")
+    LOGGER.debug(f"variant_actions: {variant_actions}")
+    LOGGER.debug(f"Variant DataFrame shape: {variant_df.shape}")
     return (variant_df, variant_actions)
 
 
@@ -286,7 +293,7 @@ def validate_and_load_mpileup_file(mpileup_file: Path) -> pd.DataFrame:
         ValueError: If required columns are missing.
     """
     _validate_file_exists(mpileup_file)
-    logging.info(f"Loading mpileup file from {mpileup_file} into a DataFrame ...")
+    LOGGER.info(f"Loading mpileup file from {mpileup_file} into a DataFrame ...")
     mpileup_df = pd.read_csv(mpileup_file, sep="\t", comment="#")
 
     required_columns = [
@@ -304,7 +311,7 @@ def validate_and_load_mpileup_file(mpileup_file: Path) -> pd.DataFrame:
     _check_required_columns(mpileup_df, required_columns, "mpileup")
     _convert_chromosome_df_column_to_string(mpileup_df)
 
-    logging.debug(f"Mpileup DataFrame shape: {mpileup_df.shape}")
+    LOGGER.debug(f"Mpileup DataFrame shape: {mpileup_df.shape}")
     return mpileup_df
 
 
@@ -328,7 +335,7 @@ def _extract_reference_maf_row(
     Raises:
         ValueError: If no suitable reference row is found in the MAF.
     """
-    logging.debug("Attempting to find a reference row in the MAF DataFrame.")
+    LOGGER.debug("Attempting to find a reference row in the MAF DataFrame.")
     matching_df = maf_df[
         (maf_df["Hugo_Symbol"] == variant_row["Hugo_Symbol"])
         & (maf_df["Chromosome"] == variant_row["Chromosome"])
@@ -346,11 +353,11 @@ def _extract_reference_maf_row(
             f"{variant_row['Reference_Allele']}>{variant_row['Alternate_Allele']}. "
             "Please ensure the MAF has at least one sample with this variant."
         )
-        logging.error(message)
+        LOGGER.error(message)
         raise ValueError(message)
 
     reference_row = matching_df.iloc[0].to_dict()
-    logging.debug(
+    LOGGER.debug(
         f"Reference row found for {variant_row['Hugo_Symbol']}: {reference_row}"
     )
 
@@ -373,9 +380,7 @@ def _calculate_new_maf_fields(
     Raises:
         ValueError: If tumour or normal data is empty.
     """
-    logging.debug(
-        f"Calculating new MAF fields for variant row: {variant_row.to_dict()}"
-    )
+    LOGGER.debug(f"Calculating new MAF fields for variant row: {variant_row.to_dict()}")
     mpileup_df = validate_and_load_mpileup_file(mpileup_file)
 
     # Build boolean masks for tumor and normal
@@ -405,11 +410,11 @@ def _calculate_new_maf_fields(
     # Check that both the tumour and normal samples have data
     if tumour_variant_df.empty:
         msg = "Tumour data is empty. Cannot create new MAF fields. Please check input data."
-        logging.error(msg)
+        LOGGER.error(msg)
         raise ValueError(msg)
     if normal_variant_df.empty:
         msg = "Normal data is empty. Cannot create new MAF fields. Please check input data."
-        logging.error(msg)
+        LOGGER.error(msg)
         raise ValueError(msg)
 
     # Calculate new MAF fields
@@ -433,7 +438,7 @@ def _calculate_new_maf_fields(
         "n_alt_count": n_alt_count,
         "n_depth": n_depth,
     }
-    logging.debug(f"Calculated sample data for new variant: {sample_data}")
+    LOGGER.debug(f"Calculated sample data for new variant: {sample_data}")
     return sample_data
 
 
@@ -451,7 +456,7 @@ def _construct_new_maf_row(
     Returns:
         dict: A dictionary representing the newly constructed MAF row.
     """
-    logging.debug("Constructing a new MAF row from reference row and variant data.")
+    LOGGER.debug("Constructing a new MAF row from reference row and variant data.")
     sample_data = _calculate_new_maf_fields(variant_row, mpileup_file)
 
     new_row = reference_maf_row.copy()
@@ -474,7 +479,7 @@ def _construct_new_maf_row(
             "n_depth": sample_data["n_depth"],
         }
     )
-    logging.debug(f"New MAF row constructed: {new_row}")
+    LOGGER.debug(f"New MAF row constructed: {new_row}")
     return new_row
 
 
@@ -493,24 +498,24 @@ def add_variants_to_maf_df(
     Returns:
         pd.DataFrame: Updated MAF DataFrame with newly added variants.
     """
-    logging.debug(f"Preparing to add {len(add_variant_df)} new variants to the MAF.")
+    LOGGER.debug(f"Preparing to add {len(add_variant_df)} new variants to the MAF.")
 
     new_maf_rows = []
 
-    logging.info("Constructing new MAF rows for variants in variant file ...")
+    LOGGER.info("Constructing new MAF rows for variants in variant file ...")
     for idx, row in add_variant_df.iterrows():
         variant_info = (
             f"{row['Hugo_Symbol']}:"
             f"{row['Start_Position']}-{row['End_Position']}:"
             f"{row['Reference_Allele']}>{row['Alternate_Allele']}"
         )
-        logging.info(f"Processing variant #{idx} -> {variant_info} ...")
+        LOGGER.info(f"Processing variant #{idx} -> {variant_info} ...")
 
         reference_maf_row = _extract_reference_maf_row(row, maf_df)
         new_maf_row = _construct_new_maf_row(reference_maf_row, row, mpileup_file)
         new_maf_rows.append(new_maf_row)
 
-    logging.info("Adding new rows to MAF file ...")
+    LOGGER.info("Adding new rows to MAF file ...")
     new_maf_rows_df = pd.DataFrame(new_maf_rows)
 
     # Mark newly added rows
@@ -518,7 +523,7 @@ def add_variants_to_maf_df(
 
     # Combine the original MAF with newly added rows
     updated_maf_df = pd.concat([maf_df, new_maf_rows_df], ignore_index=True)
-    logging.debug(
+    LOGGER.debug(
         f"Updated MAF DataFrame shape after adding variants: {updated_maf_df.shape}"
     )
 
@@ -542,10 +547,8 @@ def remove_variants_from_maf_df(
     Returns:
         pd.DataFrame: Updated MAF DataFrame with specified variants removed.
     """
-    logging.debug(
-        f"Preparing to remove {len(remove_variant_df)} variants from the MAF."
-    )
-    logging.info("Removing specified variants from MAF DataFrame...")
+    LOGGER.debug(f"Preparing to remove {len(remove_variant_df)} variants from the MAF.")
+    LOGGER.info("Removing specified variants from MAF DataFrame...")
 
     # Convert remove_variant_df to a set of tuples for faster membership checks
     remove_set = set(
@@ -559,7 +562,7 @@ def remove_variants_from_maf_df(
             remove_variant_df["TUMOUR"],
         )
     )
-    logging.debug(f"Number of variants to remove: {len(remove_set)}")
+    LOGGER.debug(f"Number of variants to remove: {len(remove_set)}")
 
     to_remove_mask = maf_df.apply(
         lambda row: (
@@ -578,10 +581,10 @@ def remove_variants_from_maf_df(
     )
 
     num_removed = to_remove_mask.sum()
-    logging.info(f"Removing {num_removed} variants from MAF DataFrame.")
+    LOGGER.info(f"Removing {num_removed} variants from MAF DataFrame.")
 
     updated_maf_df = maf_df[~to_remove_mask].reset_index(drop=True)
-    logging.debug(f"Updated MAF DataFrame shape after removal: {updated_maf_df.shape}")
+    LOGGER.debug(f"Updated MAF DataFrame shape after removal: {updated_maf_df.shape}")
     return updated_maf_df
 
 
@@ -608,11 +611,11 @@ def add_and_remove_variants_from_maf(
     Returns:
         pd.DataFrame: Updated MAF DataFrame after removal and addition of variants.
     """
-    logging.info("Performing BOTH add and remove actions.")
+    LOGGER.info("Performing BOTH add and remove actions.")
     add_variant_df = variant_df[variant_df["Action"] == "ADD"]
     remove_variant_df = variant_df[variant_df["Action"] == "REMOVE"]
 
-    logging.debug(
+    LOGGER.debug(
         f"Number of REMOVE variants: {len(remove_variant_df)}; Number of ADD variants: {len(add_variant_df)}"
     )
 
@@ -638,9 +641,9 @@ def only_add_variants_to_maf(
     Returns:
         pd.DataFrame: Updated MAF DataFrame with newly added variants.
     """
-    logging.info("Performing ONLY add actions.")
+    LOGGER.info("Performing ONLY add actions.")
     add_variant_df = variant_df[variant_df["Action"] == "ADD"]
-    logging.debug(f"Number of variants to ADD: {len(add_variant_df)}")
+    LOGGER.debug(f"Number of variants to ADD: {len(add_variant_df)}")
     updated_maf_df = add_variants_to_maf_df(maf_df, add_variant_df, mpileup_file)
     return updated_maf_df
 
@@ -659,9 +662,9 @@ def only_remove_variants_from_maf(
     Returns:
         pd.DataFrame: Updated MAF DataFrame with removed variants.
     """
-    logging.info("Performing ONLY remove actions.")
+    LOGGER.info("Performing ONLY remove actions.")
     remove_variant_df = variant_df[variant_df["Action"] == "REMOVE"]
-    logging.debug(f"Number of variants to REMOVE: {len(remove_variant_df)}")
+    LOGGER.debug(f"Number of variants to REMOVE: {len(remove_variant_df)}")
     updated_maf_df = remove_variants_from_maf_df(maf_df, remove_variant_df)
     return updated_maf_df
 
@@ -680,7 +683,7 @@ def handle_no_variant_actions(
     Returns:
         pd.DataFrame: Unchanged MAF DataFrame.
     """
-    logging.info("No variants to add or remove. Returning input MAF unchanged.")
+    LOGGER.info("No variants to add or remove. Returning input MAF unchanged.")
     return maf_df
 
 
@@ -702,7 +705,7 @@ def _process_variants_based_on_actions(
     Returns:
         pd.DataFrame: The updated MAF DataFrame after performing the relevant actions.
     """
-    logging.debug(f"Processing variant actions: {variant_actions}")
+    LOGGER.debug(f"Processing variant actions: {variant_actions}")
     processing_instructions = {
         (True, True): add_and_remove_variants_from_maf,
         (True, False): only_add_variants_to_maf,
@@ -732,7 +735,7 @@ def process_variants(
         mpileup_file (Path): Path to the mpileup file.
         output_maf (Path): Path to write the updated MAF file.
     """
-    logging.info("Starting processing of variants...")
+    LOGGER.info("Starting processing of variants...")
 
     maf_df = validate_and_load_maf_file(input_maf)
     variant_df, variant_actions = validate_and_load_variant_file(variant_file)
@@ -740,7 +743,7 @@ def process_variants(
     # Add the Added_By_MAF_Updater column to the MAF DataFrame to track variants that are added by this script
     if "Added_By_MAF_Updater" not in maf_df.columns:
         maf_df["Added_By_MAF_Updater"] = False
-        logging.debug(
+        LOGGER.debug(
             "Initialized 'Added_By_MAF_Updater' column to False for existing variants."
         )
 
@@ -753,14 +756,14 @@ def process_variants(
         by=["Chromosome", "Start_Position", "End_Position"],
         ascending=[True, True, True],
     )
-    logging.debug(
+    LOGGER.debug(
         "MAF DataFrame is now sorted by Chromosome, Start_Position, and End_Position."
     )
 
-    logging.info(f"Writing updated MAF to {output_maf} ...")
+    LOGGER.info(f"Writing updated MAF to {output_maf} ...")
     updated_maf_df.to_csv(output_maf, sep="\t", index=False)
 
-    logging.info("Successfully finished processing variants.")
+    LOGGER.info("Successfully finished processing variants.")
 
 
 def main(args: argparse.Namespace) -> int:
@@ -770,22 +773,22 @@ def main(args: argparse.Namespace) -> int:
     Returns:
         int: Return code (0 for success, non-zero for errors).
     """
-    setup_logging()
-    logging.debug("Arguments parsed successfully:")
-    logging.debug(f"  input_maf: {args.input_maf}")
-    logging.debug(f"  variant_file: {args.variant_file}")
-    logging.debug(f"  mpileup_file: {args.mpileup_file}")
-    logging.debug(f"  output_maf: {args.output_maf}")
+    update_logger_level(LOGGER, level=args.log_level)
+    LOGGER.debug("Arguments parsed successfully:")
+    LOGGER.debug(f"  input_maf: {args.input_maf}")
+    LOGGER.debug(f"  variant_file: {args.variant_file}")
+    LOGGER.debug(f"  mpileup_file: {args.mpileup_file}")
+    LOGGER.debug(f"  output_maf: {args.output_maf}")
     try:
         process_variants(
             args.input_maf, args.variant_file, args.mpileup_file, args.output_maf
         )
         return 0
     except ValueError as ve:
-        logging.error(f"ValueError encountered: {ve}")
+        LOGGER.error(f"ValueError encountered: {ve}")
         return 1
     except Exception as e:
-        logging.exception(f"An unexpected error occurred: {e}")
+        LOGGER.exception(f"An unexpected error occurred: {e}")
         return 1
 
 
