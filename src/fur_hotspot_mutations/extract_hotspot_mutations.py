@@ -1,27 +1,41 @@
+import typing as t
 import argparse
 import logging
 from pathlib import Path
+import warnings
 
 import pandas as pd
 
+from utils.logging_utils import setup_logging
 from utils.maf_utils import is_maf_format
+from utils import constants
+
+# CONSTANTS
+# This constant is referenced by functions in other modules (e.g. cli.py)
+# so do not factor it out.
+COMMAND_NAME = constants.COMMAND_NAME__EXTRACT_HOTSPOT_MUTATIONS
+
+# FUNCTIONS
 
 
-def setup_logging():
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
+    """
+    Either returns a new ArgumentParser instance or a subparser for the extract_hotspot_mutations command.
 
-
-def parse_arguments():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Identify and extract hotspot mutations from a Mutation Annotation Format (MAF) file. "
-            "Hotspot mutations are defined as identical mutations occurring at the same site in more than N samples. "
-            "The extracted hotspot mutations are saved to a new MAF file."
+    A subparser is preferred, with unspecified behavior preserved for backwards
+    compatibility.
+    """
+    description = constants.DESCRIPTION__EXTRACT_HOTSPOT_MUTATIONS
+    if subparser is None:
+        parser = argparse.ArgumentParser(description=description)
+    else:
+        short_help = constants.SHORT_HELP__EXTRACT_HOTSPOT_MUTATIONS
+        parser = subparser.add_parser(
+            COMMAND_NAME, description=description, help=short_help
         )
-    )
+
     parser.add_argument(
         "-i",
         metavar="INPUT_MAF",
@@ -50,7 +64,7 @@ def parse_arguments():
         help="Path to the output MAF file where extracted hotspot mutations will be saved.",
     )
 
-    return parser.parse_args()
+    return parser
 
 
 def extract_hotspot_mutations(
@@ -164,11 +178,8 @@ def extract_hotspot_mutations(
     return hotspot_maf
 
 
-def main():
+def main(args: argparse.Namespace) -> None:
     # Parse command line arguments
-    logging.info("Parsing command line arguments ...")
-    args = parse_arguments()
-
     input_maf = args.i[0]
     min_samples = args.m[0]
     output_maf = args.o[0]
@@ -190,4 +201,18 @@ def main():
 
 if __name__ == "__main__":
     setup_logging()
-    main()
+    # The if-name-equals-main block is no-longer the preferred way to run scripts, as
+    # we have moved to using a unified entry point for the CLI.
+    #
+    # However for backwards compatibility we show the user a deprecation warning.
+    warnings.warn(
+        (
+            f"The script `{__file__}` should be run using the CLI program "
+            f"running `{constants.PROGRAM_NAME}`."
+        ),
+        FutureWarning,
+    )
+    logging.info("Parsing command line arguments ...")
+    parser = get_argparser(subparser=None)
+    args = parser.parse_args()
+    main(args)
