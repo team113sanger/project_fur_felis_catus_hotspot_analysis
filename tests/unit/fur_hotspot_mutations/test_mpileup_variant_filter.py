@@ -24,6 +24,8 @@ from tests.mocks.mock_files import (
     get_example_tn_pairs_file,
 )
 
+from utils import constants
+
 
 # FIXTURES
 @pytest.fixture
@@ -139,7 +141,7 @@ def test_extract_true_positives_from_mpileup_df_valid_data(mpileup_df, caplog):
     Test that extract_true_positives_from_mpileup_df correctly extracts true positives from valid data.
     """
     # Given
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
     expected_true_pos_genes = ["TP53", "EGFR", "BRAF", "IDH1", "KRAS"]
 
     # When
@@ -156,7 +158,7 @@ def test_extract_true_positives_from_mpileup_df_no_true_pos(tmp_path, caplog):
     Test that extract_true_positives_from_mpileup_df handles cases where there are no true positives.
     """
     # Given
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
     no_true_pos_data = """Hugo_Symbol\tGene\tHGVSp_Short\tChromosome\tStart_Position\tEnd_Position\tVariant_Type\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tVar_in_MAF\tStatus
 TP53\tTP53\tp.R175H\t17\t7579472\t7579472\tSNP\tC\tT\tSample_T1\t45\t100\t0.45\tPRESENT_IN_MAF\tFALSE_NEGATIVE
 """
@@ -178,7 +180,7 @@ def test_extract_false_negatives_from_mpileup_df_valid_data(mpileup_df, caplog):
     Test that extract_false_negatives_from_mpileup_df correctly extracts false negatives from valid data.
     """
     # Given
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
     expected_false_neg_counts = Counter(
         {"TP53": 2, "EGFR": 3, "BRAF": 8, "IDH1": 3, "KRAS": 2}
     )
@@ -197,7 +199,7 @@ def test_extract_false_negatives_from_mpileup_df_no_false_neg(tmp_path, caplog):
     Test that extract_false_negatives_from_mpileup_df handles cases where there are no false negatives.
     """
     # Given
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
     no_false_neg_data = """Hugo_Symbol\tGene\tHGVSp_Short\tChromosome\tStart_Position\tEnd_Position\tVariant_Type\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tVar_in_MAF\tStatus
 TP53\tTP53\tp.R175H\t17\t7579472\t7579472\tSNP\tC\tT\tSample_T1\t45\t100\t0.45\tPRESENT_IN_MAF\tTRUE_POSITIVE
 """
@@ -584,7 +586,7 @@ def test_write_variants_to_variant_file(tmp_path):
 
 
 def test_process_true_positives_germline_classification(tmp_path, caplog):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
 
     # Given:
     # Create a mock mpileup file with:
@@ -665,7 +667,7 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
 def test_process_true_positives_not_germline_due_to_insufficient_pairs(
     tmp_path, caplog
 ):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
 
     # Given:
     # TRUE_POSITIVE in TUMOUR_SAMPLE_001
@@ -710,7 +712,7 @@ TUMOUR_SAMPLE_002\tNORMAL_SAMPLE_002
 
 
 def test_process_true_positives_not_germline_due_to_norm_reads(tmp_path, caplog):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
 
     # Given:
     # - One TRUE_POSITIVE in TUMOUR_SAMPLE_001
@@ -763,7 +765,7 @@ TUMOUR_SAMPLE_004\tNORMAL_SAMPLE_004
 def test_process_true_positives_expected_mutations_in_output(
     mpileup_file, tn_pairs_file, tmp_path, caplog
 ):
-    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=constants.LOGGER_NAME)
 
     # Define thresholds that we know from the fixture data will classify BRAF as germline.
     # The BRAF variant (TUMOUR_SAMPLE_D) is TRUE_POSITIVE, but there are multiple FALSE_NEGATIVE pairs
@@ -812,7 +814,7 @@ def test_process_true_positives_expected_mutations_in_output(
 def test_process_false_negatives_adds_variant_when_criteria_met(
     mpileup_file, tn_pairs_file, tmp_path, caplog
 ):
-    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=constants.LOGGER_NAME)
 
     # Given thresholds that allow a known false negative variant to be added.
     min_vaf = 0.5
@@ -859,7 +861,7 @@ def test_process_false_negatives_adds_variant_when_criteria_met(
 def test_process_false_negatives_no_add_when_criteria_not_met(
     mpileup_file, tn_pairs_file, tmp_path, caplog
 ):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
 
     # Set thresholds so that no variants meet the criteria:
     # 1. Extremely high tumour ALT reads (100000)
@@ -904,7 +906,7 @@ def test_process_false_negatives_no_add_when_criteria_not_met(
 def test_process_false_negatives_only_tumour_samples_added(
     mpileup_file, tn_pairs_file, tmp_path, caplog
 ):
-    caplog.set_level(logging.INFO)
+    caplog.set_level(logging.INFO, logger=constants.LOGGER_NAME)
 
     # Choose thresholds that might tempt adding normal samples if not filtered out.
     min_vaf = 2.0
@@ -949,7 +951,7 @@ def test_prevent_germline_readdition(tmp_path, caplog):
     Test that variants flagged as germline are not re-added as false-negative variants using mock data,
     now incorporating a VAF (Alt_Perc) requirement.
     """
-    caplog.set_level(logging.DEBUG)
+    caplog.set_level(logging.DEBUG, logger=constants.LOGGER_NAME)
 
     # Step 1: Create mock mpileup data with an 'Alt_Perc' column for VAF filtering
     mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
@@ -1039,7 +1041,7 @@ def test_vaf_filtering_in_true_positives(tmp_path, caplog):
     """
     Test that variants with normal sample VAF below the threshold are excluded during true positives processing.
     """
-    caplog.set_level("DEBUG")
+    caplog.set_level("DEBUG", logger=constants.LOGGER_NAME)
 
     # Given:
     # We have one TRUE_POSITIVE variant in TUMOUR_SAMPLE_003 with normal at ~2% VAF
@@ -1107,7 +1109,7 @@ def test_vaf_filtering_in_false_negatives(tmp_path, caplog):
     Test that variants with VAF below the threshold are excluded during false negatives processing.
     Here, we set a high min_vaf (15%) and create mock data that meets that threshold for TUMOUR_SAMPLE_003.
     """
-    caplog.set_level("INFO")
+    caplog.set_level("INFO", logger=constants.LOGGER_NAME)
 
     # Given: Mock mpileup data with a TUMOUR_SAMPLE_003 FALSE_NEGATIVE variant at 20% VAF.
     # This ensures it passes the min_vaf=15 threshold and gets "added" to the variant file.
@@ -1174,7 +1176,7 @@ def test_vaf_filter_excludes_all_below_threshold(tmp_path, caplog):
     """
     Test that no variants are included if all have VAF below the threshold.
     """
-    caplog.set_level("INFO")
+    caplog.set_level("INFO", logger=constants.LOGGER_NAME)
 
     # Given: Mock mpileup data where all variants have <5% VAF
     mpileup_data = """Hugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tTumour_Seq_Allele2\tTumor_Sample_Barcode\tAlt_Count\tTot_Count\tAlt_Perc\tStatus
