@@ -916,7 +916,7 @@ def main(args: argparse.Namespace):
     logging_level = args.log_level
 
     # Setup logging
-    setup_logging(logging_level)
+    setup_logging(level=logging_level)
     logging.info("Starting mpileup variant filtering script...")
 
     logging.info(
