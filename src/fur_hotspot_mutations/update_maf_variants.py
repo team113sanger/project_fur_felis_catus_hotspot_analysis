@@ -7,19 +7,7 @@ import typing as t
 import pandas as pd
 
 from utils.maf_utils import is_maf_format
-
-__version__ = "1.0.0"
-
-
-def setup_logging() -> None:
-    """
-    Set up logging for the script with DEBUG level by default.
-    """
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
-    logging.debug("Logging is set up with DEBUG level.")
+from utils.logging_utils import setup_logging
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -35,11 +23,6 @@ def parse_arguments() -> argparse.Namespace:
         "according to a variant file, and then writes the updated variants "
         "to a new MAF file."
     )
-
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
-
     parser.add_argument(
         "-i", "--input_maf", type=Path, required=True, help="Path to the input MAF file"
     )
