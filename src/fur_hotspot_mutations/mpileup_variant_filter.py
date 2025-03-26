@@ -1,34 +1,43 @@
+import typing as t
 import argparse
 import csv
-import logging
 from pathlib import Path
 from typing import Union
+import warnings
 
 import pandas as pd
 
+from utils.logging_utils import setup_logging, update_logger_level
+from utils import constants
 
-def setup_logging(level):
-    """
-    Configures the logging settings for the script.
-    """
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    )
+LOGGER = setup_logging()
+
+# CONSTANTS
+# This constant is referenced by functions in other modules (e.g. cli.py)
+# so do not factor it out.
+COMMAND_NAME = constants.COMMAND_NAME__MPILEUP_VARIANT_FILTER
+
+# FUNCTIONS
 
 
-def parse_arguments():
+def get_argparser(
+    subparser: t.Optional[argparse._SubParsersAction] = None,
+) -> argparse.ArgumentParser:
     """
-    Parses command-line arguments provided by the user.
+    Either returns a new ArgumentParser instance or a subparser for the
+    mpileup_variant_filter command.
 
-    Returns:
-        argparse.Namespace: An object containing parsed command-line arguments.
+    A subparser is preferred, with unspecified behavior preserved for backwards
+    compatibility.
     """
-    parser = argparse.ArgumentParser(
-        description="Uses mpileup data to identify questionable variant calls. "
-        "Uses thresholds determined by the user to decide whether a given mutation "
-        "should be included/excluded in the final callset."
-    )
+    description = constants.DESCRIPTION__MPILEUP_VARIANT_FILTER
+    if subparser is None:
+        parser = argparse.ArgumentParser(description=description)
+    else:
+        short_help = constants.SHORT_HELP__MPILEUP_VARIANT_FILTER
+        parser = subparser.add_parser(
+            COMMAND_NAME, description=description, help=short_help
+        )
 
     parser.add_argument(
         "-m",
@@ -100,7 +109,7 @@ def parse_arguments():
         help="Set the logging level (default: INFO)",
     )
 
-    return parser.parse_args()
+    return parser
 
 
 # -----------------------------------------------------------------------------
@@ -160,7 +169,7 @@ def _load_tsv_to_dataframe(tsv_file: Path) -> pd.DataFrame:
     Loads a tab-delimited TSV file into a pandas DataFrame.
     """
     try:
-        logging.debug(f"Loading TSV file {tsv_file} into DataFrame ...")
+        LOGGER.debug(f"Loading TSV file {tsv_file} into DataFrame ...")
         return pd.read_csv(tsv_file, sep="\t", comment="#")
     except Exception as e:
         raise ValueError(f"Error reading {tsv_file}: {e}")
@@ -174,7 +183,7 @@ def tsv_to_df(tsv_file: Path) -> pd.DataFrame:
     content = _get_non_comment_lines(tsv_file)
     _validate_delimiter(content, tsv_file)
     df = _load_tsv_to_dataframe(tsv_file)
-    logging.debug(f"Successfully loaded {len(df)} rows from {tsv_file}")
+    LOGGER.debug(f"Successfully loaded {len(df)} rows from {tsv_file}")
     return df
 
 
@@ -191,12 +200,12 @@ def _validate_tn_pairs_file(tn_pairs_file: Path):
                 "Tumour-normal pairs file is empty or does not exist. Please check input data."
             )
     except Exception as e:
-        logging.error(f"Error while validating tumour-normal pairs file: {e}")
+        LOGGER.error(f"Error while validating tumour-normal pairs file: {e}")
         raise
 
 
 def _load_and_validate_tn_pairs(tn_pairs_file: Path) -> pd.DataFrame:
-    logging.info(f"Loading and validating tumour-normal pairs file: {tn_pairs_file}")
+    LOGGER.info(f"Loading and validating tumour-normal pairs file: {tn_pairs_file}")
     _validate_tn_pairs_file(tn_pairs_file)
     return tsv_to_df(tn_pairs_file)
 
@@ -205,7 +214,7 @@ def _check_tn_pairs(mpileup_df: pd.DataFrame, tn_pairs_df: pd.DataFrame):
     """
     Checks if the tumor and normal samples in the T/N pair DataFrame match the mpileup DataFrame samples.
     """
-    logging.info(
+    LOGGER.info(
         "Checking sample ID overlap between mpileup dataframe and tumour-normal pairs dataframe ..."
     )
 
@@ -224,18 +233,18 @@ def _check_tn_pairs(mpileup_df: pd.DataFrame, tn_pairs_df: pd.DataFrame):
             f"Missing samples in mpileup file: {','.join(sorted(missing_in_mpileup))}"
         )
 
-    logging.info(
+    LOGGER.info(
         "Successfully checked sample IDs. Both DataFrames share the same samples."
     )
 
 
 def _extract_tn_pairs_from_df(tn_pairs_df: pd.DataFrame) -> dict:
-    logging.debug("Extracting tumour-normal pairs from DataFrame ...")
+    LOGGER.debug("Extracting tumour-normal pairs from DataFrame ...")
     tn_pairs = {}
     for idx, row in tn_pairs_df.iterrows():
         pair_id = f"{row['TUMOUR']}_{row['NORMAL']}"
         tn_pairs[pair_id] = {"TUMOUR": row["TUMOUR"], "NORMAL": row["NORMAL"]}
-    logging.debug(f"Extracted {len(tn_pairs)} tumour-normal pairs.")
+    LOGGER.debug(f"Extracted {len(tn_pairs)} tumour-normal pairs.")
     return tn_pairs
 
 
@@ -254,7 +263,7 @@ def _validate_mpileup_file(mpileup_file: Path):
                 "Mpileup file is empty or does not exist. Please check input data."
             )
     except Exception as e:
-        logging.error(f"Error validating mpileup file: {e}")
+        LOGGER.error(f"Error validating mpileup file: {e}")
         raise
 
 
@@ -274,7 +283,7 @@ def _validate_mpileup_df_columns(df: pd.DataFrame):
 
 
 def _load_and_validate_mpileup(mpileup_file: Path) -> pd.DataFrame:
-    logging.info(f"Loading and validating mpileup file: {mpileup_file}")
+    LOGGER.info(f"Loading and validating mpileup file: {mpileup_file}")
     _validate_mpileup_file(mpileup_file)
     mpileup_df = tsv_to_df(mpileup_file)
     _validate_mpileup_df_columns(mpileup_df)
@@ -297,7 +306,7 @@ def _extract_matching_variant_rows(row: pd.Series, mpileup_df: pd.DataFrame):
         & (mpileup_df["Reference_Allele"] == ref_allele)
         & (mpileup_df["Tumour_Seq_Allele2"] == alt_allele)
     ]
-    logging.debug(
+    LOGGER.debug(
         f"Found {len(matching_rows_df)} matching rows for variant {gene} at {chrom}:{start_pos}-{end_pos}"
     )
     return matching_rows_df
@@ -306,18 +315,18 @@ def _extract_matching_variant_rows(row: pd.Series, mpileup_df: pd.DataFrame):
 def extract_false_negatives_from_mpileup_df(mpileup_df: pd.DataFrame) -> pd.DataFrame:
     false_neg_df = mpileup_df[mpileup_df["Status"] == "FALSE_NEGATIVE"]
     if false_neg_df.empty:
-        logging.info("No false negatives detected. Skipping ...")
+        LOGGER.info("No false negatives detected. Skipping ...")
     else:
-        logging.info(f"Detected {false_neg_df.shape[0]} false negative variants.")
+        LOGGER.info(f"Detected {false_neg_df.shape[0]} false negative variants.")
     return false_neg_df
 
 
 def extract_true_positives_from_mpileup_df(mpileup_df: pd.DataFrame) -> pd.DataFrame:
     true_pos_df = mpileup_df[mpileup_df["Status"] == "TRUE_POSITIVE"]
     if true_pos_df.empty:
-        logging.info("No true positives detected. Skipping ...")
+        LOGGER.info("No true positives detected. Skipping ...")
     else:
-        logging.info(f"Detected {true_pos_df.shape[0]} true positive variants.")
+        LOGGER.info(f"Detected {true_pos_df.shape[0]} true positive variants.")
     return true_pos_df
 
 
@@ -380,7 +389,7 @@ def _construct_variant_file_row(
         )
         + "\n"
     )
-    logging.debug(f"Constructed variant file row: {new_variant_file_row.strip()}")
+    LOGGER.debug(f"Constructed variant file row: {new_variant_file_row.strip()}")
     return new_variant_file_row
 
 
@@ -405,7 +414,7 @@ def write_variants_to_variant_file(
         with open(variant_file, "w") as file:
             header = "TUMOUR\tNORMAL\tHugo_Symbol\tChromosome\tStart_Position\tEnd_Position\tReference_Allele\tAlternate_Allele\tAction\n"
             file.write(header)
-            logging.debug(f"Created variant file {variant_file} with header.")
+            LOGGER.debug(f"Created variant file {variant_file} with header.")
 
     new_row = _construct_variant_file_row(variant_row, tn_pairs, add_to_maf)
 
@@ -414,7 +423,7 @@ def write_variants_to_variant_file(
     if new_row not in existing_rows:
         with open(variant_file, "a") as file:
             file.write(new_row)
-        logging.info(
+        LOGGER.info(
             f"{'Added' if add_to_maf else 'Removed'} variant row to {variant_file}: {new_row.strip()}"
         )
 
@@ -479,7 +488,7 @@ def _is_germline_pair(
     tumour_ok = tumour_status in tumour_ok_statuses
 
     if normal_ok and tumour_ok:
-        logging.debug(
+        LOGGER.debug(
             f"{pair_id} flagged as germline: "
             f"Tumour status={tumour_status}, Normal status={normal_status}, "
             f"Tumour VAF={tumour_vaf}%, Normal VAF={normal_vaf}% (>= {min_vaf}%), "
@@ -494,7 +503,7 @@ def _is_germline_pair(
     if not tumour_ok:
         reasons.append(f"Tumour status {tumour_status} not in {tumour_ok_statuses}")
 
-    logging.debug(
+    LOGGER.debug(
         f"{pair_id} is likely somatic: {', '.join(reasons) if reasons else 'No matching criteria'}"
     )
     return False
@@ -506,7 +515,7 @@ def _count_germline_tn_pairs(
     min_vaf: float,
     min_alt_norm_reads: int,
 ) -> int:
-    logging.info("Counting germline tumour-normal pairs with this mutation ...")
+    LOGGER.info("Counting germline tumour-normal pairs with this mutation ...")
     germline_pair_count = 0
 
     for pair_id, samples in tn_pairs.items():
@@ -541,7 +550,7 @@ def _count_germline_tn_pairs(
             ):
                 germline_pair_count += 1
 
-    logging.info(f"Counted {germline_pair_count} germline tumour-normal pairs.")
+    LOGGER.info(f"Counted {germline_pair_count} germline tumour-normal pairs.")
     return germline_pair_count
 
 
@@ -571,11 +580,11 @@ def _log_flagged_germline_pairs(
                 flagged_pairs.append(pair_id)
 
     if flagged_pairs:
-        logging.debug(
+        LOGGER.debug(
             f"Flagged tumour-normal pairs as germline: {', '.join(flagged_pairs)}"
         )
     else:
-        logging.debug("No tumour-normal pairs flagged as germline for this variant.")
+        LOGGER.debug("No tumour-normal pairs flagged as germline for this variant.")
 
 
 def _process_germline_variants(
@@ -587,7 +596,7 @@ def _process_germline_variants(
     variant_file: Path,
 ):
     true_pos_df = extract_true_positives_from_mpileup_df(mpileup_df)
-    logging.info(
+    LOGGER.info(
         "Iterating through true positive variants to check for potential germline (and removal from MAF) ..."
     )
 
@@ -595,7 +604,7 @@ def _process_germline_variants(
     germline_variant_ids = set()
 
     for _, row in true_pos_df.iterrows():
-        logging.info(
+        LOGGER.info(
             f"Processing {row['Hugo_Symbol']} variant at position {row['Chromosome']}:{row['Start_Position']} "
             f"in sample {row['Tumor_Sample_Barcode']} ..."
         )
@@ -606,13 +615,13 @@ def _process_germline_variants(
 
         if germline_tn_pair_count < min_germline_tn_pairs:
             shortfall = min_germline_tn_pairs - germline_tn_pair_count
-            logging.info(
+            LOGGER.info(
                 f"Variant likely somatic. Germline pairs={germline_tn_pair_count} < min_germline_tn_pairs={min_germline_tn_pairs}. "
                 f"Short by {shortfall} pair(s)."
             )
             continue
 
-        logging.info(
+        LOGGER.info(
             f"Identified potential germline variant ({germline_tn_pair_count} out of {len(tn_pairs)} "
             "tumour-normal pairs flagged as FN). Performing further checks ..."
         )
@@ -620,7 +629,7 @@ def _process_germline_variants(
         _log_flagged_germline_pairs(
             matching_variant_rows_df, tn_pairs, min_vaf, min_alt_norm_reads
         )
-        logging.info(
+        LOGGER.info(
             f"Variant flagged as germline (normal samples in {germline_tn_pair_count} T/N pairs "
             f"have >= {min_alt_norm_reads} ALT reads). Will be removed from MAF"
         )
@@ -646,7 +655,7 @@ def process_true_positives(
     min_alt_norm_reads: int,
     variant_file: Path,
 ):
-    logging.info(
+    LOGGER.info(
         f"Checking true positive variants in {mpileup_file} for potential germline variants ..."
     )
     mpileup_df = _load_and_validate_mpileup(mpileup_file)
@@ -661,7 +670,7 @@ def process_true_positives(
         min_alt_norm_reads,
         variant_file,
     )
-    logging.info(
+    LOGGER.info(
         f"Finished processing true positives. Identified {len(germline_variant_ids)} germline variant(s)."
     )
     return germline_variant_ids
@@ -705,14 +714,14 @@ def _process_single_variant(
     variant_file: Path,
     tumour_samples: set,
 ) -> bool:
-    logging.debug(
+    LOGGER.debug(
         f"Processing variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
         f"in {variant['Tumor_Sample_Barcode']} ..."
     )
 
     tumour_sample = variant["Tumor_Sample_Barcode"]
     if tumour_sample not in tumour_samples:
-        logging.info(
+        LOGGER.info(
             f"Skipping variant (from normal sample): {variant['Hugo_Symbol']} "
             f"at {variant['Chromosome']}:{variant['Start_Position']} "
             f"in {tumour_sample}."
@@ -757,12 +766,12 @@ def _process_single_variant(
     )
 
     if meets_criteria:
-        logging.debug(
+        LOGGER.debug(
             f"Variant meets criteria for addition to MAF: Tumour VAF {vaf_tumour}% >= {min_vaf}%, "
             f"Tumour ALT reads {alt_count_tumour} >= {min_alt_tum_reads}, "
             f"Normal ALT reads {alt_count_normal} <= {min_alt_norm_reads}"
         )
-        logging.info(
+        LOGGER.info(
             f"Adding FN variant to MAF: {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
             f"in tumour {tumour_sample}."
         )
@@ -774,7 +783,7 @@ def _process_single_variant(
         )
         return True
     else:
-        logging.info(
+        LOGGER.info(
             f"Variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} "
             f"in tumour {tumour_sample} NOT added (reasons: {', '.join(reasons)})."
         )
@@ -784,7 +793,7 @@ def _process_single_variant(
 def _should_skip_variant(variant, germline_variant_ids):
     variant_id = _counstruct_variant_id(variant)
     if variant_id in germline_variant_ids:
-        logging.info(
+        LOGGER.info(
             f"Skipping variant {variant['Hugo_Symbol']} at {variant['Chromosome']}:{variant['Start_Position']} in {variant['Tumor_Sample_Barcode']} "
             f"as it has been previously flagged as germline."
         )
@@ -833,10 +842,10 @@ def _process_fn_variants(
     """
     Processes false negative variants to identify those suitable for addition to the MAF file.
     """
-    logging.info("Processing false negative variants for potential addition to MAF...")
+    LOGGER.info("Processing false negative variants for potential addition to MAF...")
     false_neg_df = extract_false_negatives_from_mpileup_df(mpileup_df)
     if false_neg_df.empty:
-        logging.info("No false negative variants found. Nothing to add.")
+        LOGGER.info("No false negative variants found. Nothing to add.")
         return
 
     tumour_samples = {pair["TUMOUR"] for pair in tn_pairs.values()}
@@ -853,7 +862,7 @@ def _process_fn_variants(
         tumour_samples,
         germline_variant_ids,
     )
-    logging.info(
+    LOGGER.info(
         f"{'No variants met the criteria for addition to MAF.' if variants_added == 0 else f'Total variants added to MAF: {variants_added}'}"
     )
 
@@ -870,7 +879,7 @@ def process_false_negatives(
     """
     High-level function to load data and process false negative tumour variants to check if they meet the criteria for being added to the MAF file.
     """
-    logging.info(
+    LOGGER.info(
         f"Checking false negative variants in {mpileup_file} for possible addition to MAF file ..."
     )
     mpileup_df = _load_and_validate_mpileup(mpileup_file)
@@ -891,8 +900,12 @@ def process_false_negatives(
 # -----------------------------------------------------------------------------
 # MAIN PIPELINE
 # -----------------------------------------------------------------------------
-def main():
-    args = parse_arguments()
+def main(args: argparse.Namespace):
+    """
+    Main pipeline to process mpileup data and identify questionable variants for
+    potential addition/removal from a MAF file.
+    """
+
     mpileup_file = args.mpileup_file
     tn_pairs_file = args.tn_pairs_file
     variant_file = args.variant_file
@@ -900,13 +913,12 @@ def main():
     min_alt_tum_reads = args.alt_tumour_reads
     min_alt_norm_reads = args.alt_normal_reads
     min_germline_tn_pairs = args.germline_tn_pairs
-    logging_level = args.log_level
 
     # Setup logging
-    setup_logging(logging_level)
-    logging.info("Starting mpileup variant filtering script...")
+    update_logger_level(LOGGER, level=args.log_level)
+    LOGGER.info("Starting mpileup variant filtering script...")
 
-    logging.info(
+    LOGGER.info(
         f"User parameters: mpileup_file={mpileup_file}, tn_pairs_file={tn_pairs_file}, variant_file={variant_file}, "
         f"min_vaf={min_vaf}, alt_tumour_reads={min_alt_tum_reads}, alt_normal_reads={min_alt_norm_reads}, "
         f"germline_tn_pairs={min_germline_tn_pairs}"
@@ -933,8 +945,21 @@ def main():
         germline_variants,
     )
 
-    logging.info("Completed mpileup variant filtering pipeline.")
+    LOGGER.info("Completed mpileup variant filtering pipeline.")
 
 
 if __name__ == "__main__":
-    main()
+    # The if-name-equals-main block is no-longer the preferred way to run scripts, as
+    # we have moved to using a unified entry point for the CLI.
+    #
+    # However for backwards compatibility we show the user a deprecation warning.
+    warnings.warn(
+        (
+            f"The script `{__file__}` should be run using the CLI program "
+            f"running `{constants.PROGRAM_NAME}`."
+        ),
+        FutureWarning,
+    )
+    parser = get_argparser(subparser=None)
+    args = parser.parse_args()
+    main(args)
