@@ -5,8 +5,11 @@
 
 import os
 from pathlib import Path
+import importlib.resources
 
 import pytest
+
+import tests.mocks
 
 # CONSTANTS
 ENV_VAR_MAF_DIR = "TEST_MAF_DIR"
@@ -14,18 +17,31 @@ ENV_VAR_MAF_DIR = "TEST_MAF_DIR"
 
 # FIXTURES
 @pytest.fixture
-def mock_file_path(tmp_path):
-    """Fixture to create a temporary file for testing."""
-    return tmp_path / "test_file"
-
-
-@pytest.fixture
 def maf() -> Path:
-    raw_maf_dir = os.environ.get(ENV_VAR_MAF_DIR, "tests/mocks")
-    maf_dir = Path(raw_maf_dir)
-    expected_maf = "keepPA_vaf_size_filt_matched_6711_2820.maf"
-    maf = maf_dir / expected_maf
-    if not maf.exists():
-        raise FileNotFoundError(f"Could not find MAF file at {str(maf)}")
+    # If the environment variable is not set we use importlib.resources,
+    # otherwise we use the path from the environment variable
+    # to find the MAF file.
+    file_name = "keepPA_vaf_size_filt_matched_6711_2820.maf"
+    env_var_exists = bool(os.environ.get(ENV_VAR_MAF_DIR, None))
 
-    return maf
+    if env_var_exists:
+        from_env = True
+        maf_file_dir = Path(os.environ[ENV_VAR_MAF_DIR])
+        if not maf_file_dir.is_dir():
+            msg = f"Environment variable {ENV_VAR_MAF_DIR!r} is not a directory: {maf_file_dir}"
+            raise NotADirectoryError(msg)
+        maf_file = maf_file_dir / file_name
+    else:
+        from_env = False
+        resource = importlib.resources.files(tests.mocks) / file_name
+        maf_file = Path(str(resource))  # Recast Resource obj to Path obj via str()
+
+    # Check if the file exists
+    if not maf_file.exists() and from_env:
+        msg = f"Could not find MAF file at {maf_file} from environment variable {ENV_VAR_MAF_DIR!r}"
+        raise FileNotFoundError(msg)
+    if not maf_file.exists() and not from_env:
+        msg = f"Could not find MAF file at {maf_file} via importlib.resources"
+        raise FileNotFoundError(msg)
+
+    return maf_file

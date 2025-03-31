@@ -4,7 +4,10 @@ version = "1.0.0"
 description = ""
 authors = ["Bailey Francis <bf14@sanger.ac.uk>"]
 readme = "README.md"
-packages = [{ include = "fur_hotspot_mutations", from = "src" }]
+packages = [
+    { include = "fur_hotspot_mutations", from = "src" },
+    { include = "utils", from = "src" }
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
