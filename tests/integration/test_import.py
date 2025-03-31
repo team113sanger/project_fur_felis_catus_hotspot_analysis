@@ -1,5 +1,7 @@
-import pytest
+from pathlib import Path
 import re
+
+import pytest
 
 # https://gitlab.internal.sanger.ac.uk/help/user/packages/pypi_repository/index.md#ensure-your-version-string-is-valid
 SEMVER_REGEX = "".join(
@@ -17,6 +19,10 @@ SEMVER_REGEX = "".join(
 
 
 @pytest.mark.filterwarnings("ignore")
+@pytest.mark.skipif(
+    not Path("pyproject.toml").exists(),
+    reason="No pyproject.toml file -- likely a global install test",
+)
 def test_package_structure_by_importing_from_src():
     from src import fur_hotspot_mutations as module
 
