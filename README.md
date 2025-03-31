@@ -9,6 +9,36 @@
 [develop-pipe-badge]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/badges/develop/pipeline.svg
 [develop-branch]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/-/commits/develop
 
+## Usage
+
+Within the Docker image (see below) you can run the following command:
+
+```
+usage: fur_hotspot_mutations [-h] [--version] COMMAND ...
+
+A toolkit for identifying hotspot mutations in tumor cohorts and rescuing false-negative variant calls from Caveman and Pindel.
+The program processes MAF files to evaluate mutations against specific criteria, rescue false-negatives, remove false-positives, and reclassify suspected germline mutations.
+
+positional arguments:
+  COMMAND
+    extract_hotspot_mutations
+                        Identify and extract hotspot mutations from a MAF file.
+    mpileup_variant_filter
+                        Filter variant calls using mpileup data.
+    update_maf_variants
+                        Add or remove variants in a MAF file.
+    check_mpileup_samples_from_maf
+                        Process MAF and BAM files using samtools mpileup.
+
+options:
+  -h, --help            show this help message and exit
+```
+
+Please see tests for examples
+
+## Docker Image
+
+This project hosts Docker images on Quay.io. Please see [https://quay.io/repository/team113sanger/fur_hotspot_mutations](https://quay.io/repository/team113sanger/fur_hotspot_mutations?tab=tags).
 
 ## Summary
 
