@@ -99,51 +99,55 @@ def test_is_maf_format_with_valid_file(maf):
 
 
 # Tests for _check_for_duplicates
-def test_check_for_duplicates(mock_file_path: Path, caplog):
-    # Test the function with a file with no duplicate lines
-    no_duplicate_data = "line1\nline2\nline3\n# comment line\nline4\n"
-    with patch("pathlib.Path.open", mock_open(read_data=no_duplicate_data)):
-        assert (
-            _check_for_duplicates(mock_file_path) is True
-        ), "The function should return True for a file with no duplicate lines."
+@pytest.mark.parametrize(
+    "file_data, expected_result, expected_logging_warnings",
+    [
+        pytest.param(
+            "line1\nline2\nline3\n# comment line\nline4\n",
+            True,
+            [],
+            id="no_duplicates",
+        ),
+        pytest.param(
+            "line1\nline2\nline3\nline1\nline4\n",
+            False,
+            ["Duplicate line found", "Line 1 and Line 4"],
+            id="has_duplicates",
+        ),
+        pytest.param(
+            "# Comment 1\n# Comment 2\n",
+            False,
+            ["contains no valid lines"],
+            id="no_duplicates#comments_only",
+        ),
+        pytest.param(
+            "",
+            False,
+            ["contains no valid lines"],
+            id="empty_file",
+        ),
+    ],
+)
+def test_check_for_duplicates(
+    tmp_path: Path,
+    file_data: str,
+    expected_result: bool,
+    expected_logging_warnings: list[str],
+    caplog,
+):
+    # Given
+    mock_maf_file = tmp_path / "mock_maf_file.txt"
+    mock_maf_file.write_text(file_data)
+    assert mock_maf_file.exists(), "Precondition"
 
-    # Test with a file that has duplicate lines
-    duplicate_data = "line1\nline2\nline3\nline1\nline4\n"
-    with patch("pathlib.Path.open", mock_open(read_data=duplicate_data)):
-        assert (
-            _check_for_duplicates(mock_file_path) is False
-        ), "The function should return False for a file with duplicate lines."
+    # When
+    with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
+        result = _check_for_duplicates(mock_maf_file)
 
-    # Test that the function logs a warning when a duplicate line is found
-    duplicate_data = "line1\nline2\nline3\nline1\nline4\n"
-    with patch("pathlib.Path.open", mock_open(read_data=duplicate_data)):
-        with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
-            _check_for_duplicates(mock_file_path)
-        assert (
-            "Duplicate line found" in caplog.text and "Line 1 and Line 4" in caplog.text
-        ), "A warning should be logged for duplicate lines."
-
-    # Test with an empty file
-    empty_data = ""
-    with patch("pathlib.Path.open", mock_open(read_data=empty_data)):
-        with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
-            result = _check_for_duplicates(mock_file_path)
-        assert result is False, "The function should return False for an empty file."
-        assert (
-            "contains no valid lines" in caplog.text
-        ), "A warning should be logged for files with no valid lines."
-
-    # Test with a file containing only comment lines
-    comments_only_data = "# Comment 1\n# Comment 2\n"
-    with patch("pathlib.Path.open", mock_open(read_data=comments_only_data)):
-        with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
-            result = _check_for_duplicates(mock_file_path)
-        assert (
-            result is False
-        ), "The function should return False for files with only comments."
-        assert (
-            "contains no valid lines" in caplog.text
-        ), "A warning should be logged for files with no valid lines."
+    # Then
+    assert result == expected_result
+    for warning in expected_logging_warnings:
+        assert warning in caplog.text, f"Expected warning '{warning}' not found in log."
 
 
 def test_check_for_duplicates_with_valid_file(maf):
