@@ -1,10 +1,13 @@
 [tool.poetry]
 name = "fur_hotspot_mutations"
-version = "1.0.0"
+version = "1.0.1"
 description = ""
 authors = ["Bailey Francis <bf14@sanger.ac.uk>"]
 readme = "README.md"
-packages = [{ include = "fur_hotspot_mutations", from = "src" }]
+packages = [
+    { include = "fur_hotspot_mutations", from = "src" },
+    { include = "utils", from = "src" }
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -25,6 +28,7 @@ pandas = "^2.2.3"
 # - fur_hotspot_mutations is the name of your package, see 'tool.poetry.packages' above
 # - my_subpackage is the name of the subpackage, e.g. 'scripts' or 'entrypoints'
 # - my_function_name is the name of the function to be run, e.g. 'do_something' and not 'do_something()' (it should take no arguments)
+fur_hotspot_mutations = "fur_hotspot_mutations.cli:main"
 
 [tool.pytest.ini_options]
 # Pytest setting go here.

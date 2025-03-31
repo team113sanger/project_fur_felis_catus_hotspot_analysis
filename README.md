@@ -1,30 +1,30 @@
 # fur_hotspot_mutations
 
-
-
 |                         Main                         |                         Develop                          |
 | :----------------------------------------------------: | :------------------------------------------------------: |
-| [![pipeline status][main-pipe-badge]][main-branch] | [![pipeline status][develop-pipe-badge]][develop-branch] |
+| [![pipeline status][master-pipe-badge]][master-branch] | [![pipeline status][develop-pipe-badge]][develop-branch] |
 
-[main-pipe-badge]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/badges/main/pipeline.svg
-[main-branch]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/-/commits/main
+[master-pipe-badge]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/badges/master/pipeline.svg
+[master-branch]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/-/commits/master
 [develop-pipe-badge]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/badges/develop/pipeline.svg
 [develop-branch]: https://gitlab.internal.sanger.ac.uk/DERMATLAS/fur/fur_hotspot_mutations/-/commits/develop
 
 
-## Summary
+## Summary
 
 This repository contains code for identifying artifacts and rescuing false-negative variant calls from Caveman and Pindel calls. It also includes analysis results produced from the FUR Felis Catus dataset.
+
 In brief, the tool takes an input MAF file (generated with the Dermatlas processing pipeline) that describes a cohort of tumors and identifies hotspot mutations within the cohort. The tool then generates a read pileup for each hotspot locus in each sample and counts the number of reads attributable to alternative alleles in the pileup.
+
 Hotspot mutations in the MAF are then evaluated against several criteria:
 
-Is the variant allele frequency (VAF) > 1%?
-Is the number of ALT allele reads in the tumor sample > 5?
-Is the number of ALT allele reads in the normal sample < 3?
+- Is the variant allele frequency (VAF) > 1%?
+- Is the number of ALT allele reads in the tumor sample > 5?
+- Is the number of ALT allele reads in the normal sample < 3?
 
 When these criteria are met, the mutation is considered a false-negative and new occurrences of the hotspot mutation are added to the MAF file. Conversely, in samples where an identified hotspot mutation fails to meet these criteria, it is considered a false positive variant and removed from the MAF.
-The tool also looks at calls at the cohort level. When the number of tumor-normal pairs flagged as false negatives for a variant is greater than 3, the variant is reclassified as a germline mutation and removed.
 
+The tool also looks at calls at the cohort level. When the number of tumor-normal pairs flagged as false negatives for a variant is greater than 3, the variant is reclassified as a germline mutation and removed.
 
 
 ## Table of Contents

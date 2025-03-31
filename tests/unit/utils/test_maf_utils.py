@@ -1,3 +1,4 @@
+import typing as t
 import logging
 import os
 from pathlib import Path
@@ -11,79 +12,87 @@ from utils.maf_utils import (
     _check_column_consistency,
 )
 
+from utils import constants
+
 # TESTS
 
 
-# Tests for is_maf_format
-def test_is_maf_format(mock_file_path: Path):
-    # Test with a valid MAF file
-    valid_maf_data = (
-        "Hugo_Symbol\tCenter\tNCBI_Build\tChromosome\tStart_Position\tEnd_Position\t"
-        "Variant_Classification\tVariant_Type\tReference_Allele\tTumor_Seq_Allele2\n"
-        "TP53\tTCGA\tGRCh38\t17\t7574003\t7574010\tMissense_Mutation\tSNP\tG\tA\n"
-    )
-    with patch("pathlib.Path.open", mock_open(read_data=valid_maf_data)):
-        assert (
-            is_maf_format(mock_file_path) is True
-        ), "The function should return True for a valid MAF file."
+@pytest.mark.parametrize(
+    "file_data, expected_result",
+    [
+        pytest.param(
+            (
+                "Hugo_Symbol\tCenter\tNCBI_Build\tChromosome\tStart_Position\tEnd_Position\t"
+                "Variant_Classification\tVariant_Type\tReference_Allele\tTumor_Seq_Allele2\n"
+                "TP53\tTCGA\tGRCh38\t17\t7574003\t7574010\tMissense_Mutation\tSNP\tG\tA\n"
+            ),
+            True,
+            id="valid_maf_file",
+        ),
+        pytest.param(
+            "Some_Other_Header\tUnrelated_Column\n",
+            False,
+            id="missing_required_columns",
+        ),
+        pytest.param(
+            (
+                "Hugo_Symbol\tCenter\tNCBI_Build\tChromosome\tStart_Position\tEnd_Position\t"
+                "Variant_Classification\tVariant_Type\tReference_Allele\tTumor_Seq_Allele2\n"
+                "TP53\tTCGA\tGRCh38\t17\t7574010\t7574003\tMissense_Mutation\tSNP\tG\tA\n"
+            ),
+            False,
+            id="invalid_positions",
+        ),
+        pytest.param(
+            (
+                "Hugo_Symbol\tCenter\tNCBI_Build\tChromosome\tStart_Position\tEnd_Position\t"
+                "Variant_Classification\tVariant_Type\tReference_Allele\tTumor_Seq_Allele2\n"
+                "TP53\tTCGA\tGRCh38\t17\tNaN\t7574010\tMissense_Mutation\tSNP\tG\tA\n"
+            ),
+            False,
+            id="non_integer_positions",
+        ),
+        pytest.param(
+            "",
+            False,
+            id="empty_file",
+        ),
+        pytest.param(
+            "# This is a comment line\n# Another comment line\n",
+            False,
+            id="comments_only",
+        ),
+        pytest.param(
+            "TP53\tTCGA\tGRCh38\t17\t7574003\t7574010\tMissense_Mutation\tSNP\tG\tA\n",
+            False,
+            id="no_header",
+        ),
+    ],
+)
+def test_is_maf_format(
+    tmp_path: Path,
+    file_data: str,
+    expected_result: bool,
+):
+    # Given
+    mock_maf_file = tmp_path / "mock_maf_file.txt"
+    mock_maf_file.write_text(file_data)
+    assert mock_maf_file.exists(), "Precondition"
 
-    # Test with a file missing required columns
-    missing_columns_data = "Some_Other_Header\tUnrelated_Column\n"
-    with patch("pathlib.Path.open", mock_open(read_data=missing_columns_data)):
-        assert (
-            is_maf_format(mock_file_path) is False
-        ), "The function should return False for a file missing required MAF columns."
+    # When
+    result = is_maf_format(mock_maf_file)
 
-    # Test with invalid Start_Position and End_Position values
-    invalid_positions_data = (
-        "Hugo_Symbol\tCenter\tNCBI_Build\tChromosome\tStart_Position\tEnd_Position\t"
-        "Variant_Classification\tVariant_Type\tReference_Allele\tTumor_Seq_Allele2\n"
-        "TP53\tTCGA\tGRCh38\t17\t7574010\t7574003\tMissense_Mutation\tSNP\tG\tA\n"
-    )
-    with patch("pathlib.Path.open", mock_open(read_data=invalid_positions_data)):
-        assert (
-            is_maf_format(mock_file_path) is False
-        ), "The function should return False for invalid position data (Start_Position > End_Position)."
+    # Then
+    assert result == expected_result
 
-    # Test with non-integer Start_Position or End_Position
-    non_integer_positions_data = (
-        "Hugo_Symbol\tCenter\tNCBI_Build\tChromosome\tStart_Position\tEnd_Position\t"
-        "Variant_Classification\tVariant_Type\tReference_Allele\tTumor_Seq_Allele2\n"
-        "TP53\tTCGA\tGRCh38\t17\tNaN\t7574010\tMissense_Mutation\tSNP\tG\tA\n"
-    )
-    with patch("pathlib.Path.open", mock_open(read_data=non_integer_positions_data)):
-        assert (
-            is_maf_format(mock_file_path) is False
-        ), "The function should return False for non-integer positions."
 
-    # Test with an empty file
-    empty_file_data = ""
-    with patch("pathlib.Path.open", mock_open(read_data=empty_file_data)):
-        assert (
-            is_maf_format(mock_file_path) is False
-        ), "The function should return False for an empty file."
-
-    # Test with a file containing only comments
-    comment_only_data = "# This is a comment line\n# Another comment line\n"
-    with patch("pathlib.Path.open", mock_open(read_data=comment_only_data)):
-        assert (
-            is_maf_format(mock_file_path) is False
-        ), "The function should return False for a file with only comments."
-
+def test_is_maf_format__with_corrupted_file(tmp_path: Path):
     # Test with a file that raises an exception (e.g., unreadable file)
+    mock_maf_file = tmp_path / "mock_maf_file.txt"
     with patch("pathlib.Path.open", side_effect=Exception("File read error")):
         assert (
-            is_maf_format(mock_file_path) is False
+            is_maf_format(mock_maf_file) is False
         ), "The function should return False when an exception is raised while reading the file."
-
-    # Test with a file missing header but having valid data
-    no_header_data = (
-        "TP53\tTCGA\tGRCh38\t17\t7574003\t7574010\tMissense_Mutation\tSNP\tG\tA\n"
-    )
-    with patch("pathlib.Path.open", mock_open(read_data=no_header_data)):
-        assert (
-            is_maf_format(mock_file_path) is False
-        ), "The function should return False for a file with no valid header."
 
 
 def test_is_maf_format_with_valid_file(maf):
@@ -97,51 +106,55 @@ def test_is_maf_format_with_valid_file(maf):
 
 
 # Tests for _check_for_duplicates
-def test_check_for_duplicates(mock_file_path: Path, caplog):
-    # Test the function with a file with no duplicate lines
-    no_duplicate_data = "line1\nline2\nline3\n# comment line\nline4\n"
-    with patch("pathlib.Path.open", mock_open(read_data=no_duplicate_data)):
-        assert (
-            _check_for_duplicates(mock_file_path) is True
-        ), "The function should return True for a file with no duplicate lines."
+@pytest.mark.parametrize(
+    "file_data, expected_result, expected_logging_warnings",
+    [
+        pytest.param(
+            "line1\nline2\nline3\n# comment line\nline4\n",
+            True,
+            [],
+            id="no_duplicates",
+        ),
+        pytest.param(
+            "line1\nline2\nline3\nline1\nline4\n",
+            False,
+            ["Duplicate line found", "Line 1 and Line 4"],
+            id="has_duplicates",
+        ),
+        pytest.param(
+            "# Comment 1\n# Comment 2\n",
+            False,
+            ["contains no valid lines"],
+            id="no_duplicates#comments_only",
+        ),
+        pytest.param(
+            "",
+            False,
+            ["contains no valid lines"],
+            id="empty_file",
+        ),
+    ],
+)
+def test_check_for_duplicates(
+    tmp_path: Path,
+    file_data: str,
+    expected_result: bool,
+    expected_logging_warnings: list[str],
+    caplog,
+):
+    # Given
+    mock_maf_file = tmp_path / "mock_maf_file.txt"
+    mock_maf_file.write_text(file_data)
+    assert mock_maf_file.exists(), "Precondition"
 
-    # Test with a file that has duplicate lines
-    duplicate_data = "line1\nline2\nline3\nline1\nline4\n"
-    with patch("pathlib.Path.open", mock_open(read_data=duplicate_data)):
-        assert (
-            _check_for_duplicates(mock_file_path) is False
-        ), "The function should return False for a file with duplicate lines."
+    # When
+    with caplog.at_level(logging.WARNING, logger=constants.LOGGER_NAME):
+        result = _check_for_duplicates(mock_maf_file)
 
-    # Test that the function logs a warning when a duplicate line is found
-    duplicate_data = "line1\nline2\nline3\nline1\nline4\n"
-    with patch("pathlib.Path.open", mock_open(read_data=duplicate_data)):
-        with caplog.at_level(logging.WARNING):
-            _check_for_duplicates(mock_file_path)
-        assert (
-            "Duplicate line found" in caplog.text and "Line 1 and Line 4" in caplog.text
-        ), "A warning should be logged for duplicate lines."
-
-    # Test with an empty file
-    empty_data = ""
-    with patch("pathlib.Path.open", mock_open(read_data=empty_data)):
-        with caplog.at_level(logging.WARNING):
-            result = _check_for_duplicates(mock_file_path)
-        assert result is False, "The function should return False for an empty file."
-        assert (
-            "contains no valid lines" in caplog.text
-        ), "A warning should be logged for files with no valid lines."
-
-    # Test with a file containing only comment lines
-    comments_only_data = "# Comment 1\n# Comment 2\n"
-    with patch("pathlib.Path.open", mock_open(read_data=comments_only_data)):
-        with caplog.at_level(logging.WARNING):
-            result = _check_for_duplicates(mock_file_path)
-        assert (
-            result is False
-        ), "The function should return False for files with only comments."
-        assert (
-            "contains no valid lines" in caplog.text
-        ), "A warning should be logged for files with no valid lines."
+    # Then
+    assert result == expected_result
+    for warning in expected_logging_warnings:
+        assert warning in caplog.text, f"Expected warning '{warning}' not found in log."
 
 
 def test_check_for_duplicates_with_valid_file(maf):
@@ -154,35 +167,56 @@ def test_check_for_duplicates_with_valid_file(maf):
     ), "The function should return True for a valid MAF file."
 
 
-# Tests for check_column_consistency
-def test_check_column_consistency(mock_file_path: Path):
-    # Test with a valid file where all rows have consistent columns
-    consistent_column_data = "col1\tcol2\tcol3\n1\t2\t3\n4\t5\t6\n7\t8\t9\n"
-    with patch("pathlib.Path.open", mock_open(read_data=consistent_column_data)):
-        assert (
-            _check_column_consistency(mock_file_path) is True
-        ), "The function should return True for a file with consistent column counts"
+@pytest.mark.parametrize(
+    "file_data, expected_result",
+    [
+        pytest.param(
+            "col1\tcol2\tcol3\n1\t2\t3\n4\t5\t6\n7\t8\t9\n",
+            True,
+            id="consistent_columns",
+        ),
+        pytest.param(
+            "col1\tcol2\tcol3\n1\t2\t3\n4\t5\n7\t8\t9\n",
+            False,
+            id="inconsistent_columns",
+        ),
+        pytest.param(
+            "",
+            False,
+            id="empty_file",
+        ),
+    ],
+)
+def test_check_column_consistency(
+    tmp_path: Path,
+    file_data: str,
+    expected_result: bool,
+):
+    # Given
+    mock_file = tmp_path / "mock_column_file.txt"
+    mock_file.write_text(file_data or "")
+    assert mock_file.exists(), "Precondition"
 
-    # Test with a file with inconsistent columns
-    inconsistent_column_data = "col1\tcol2\tcol3\n1\t2\t3\n4\t5\n7\t8\t9\n"
-    with patch("pathlib.Path.open", mock_open(read_data=inconsistent_column_data)):
-        assert (
-            _check_column_consistency(mock_file_path) is False
-        ), "The function should return False for a file with inconsistent column counts"
+    # When
+    result = _check_column_consistency(mock_file)
 
-    # Test with an empty file
-    empty_data = ""
-    with patch("pathlib.Path.open", mock_open(read_data=empty_data)):
-        assert (
-            _check_column_consistency(mock_file_path) is False
-        ), "The function should return False for an empty file"
-
-    # Test with a file that does not exist
-    non_existent_path = Path("nonexistent_file.txt")
-    assert _check_column_consistency(non_existent_path) is False
+    # Then
+    assert result == expected_result
 
 
-def test_check_column_consistency_with_valid_file(maf):
+def test_check_column_consistency__non_existent_file():
+    # Given
+    non_existent_file = Path("non_existent_file.txt")
+    assert not non_existent_file.exists(), "Precondition: The file should not exist."
+
+    # When
+    result = _check_column_consistency(non_existent_file)
+
+    # Then
+    assert result is False, "The function should return False for a non-existent file."
+
+
+def test_check_column_consistency__with_valid_file(maf: Path):
     # Ensure the mock MAF file exists
     assert maf.exists(), "The mock MAF file does not exist."
 

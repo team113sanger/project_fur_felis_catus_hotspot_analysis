@@ -1,0 +1,79 @@
+# syntax=docker/dockerfile:1
+############################################
+# Stage 1: Base setup with dependencies
+############################################
+FROM python:3.11-slim-bullseye AS base_stage
+
+# Set environment variables
+USER root
+ENV \
+    PYTHONUNBUFFERED=1 \
+    PIP_DEFAULT_TIMEOUT=100 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_VERSION=23.3.1 \
+    OPT_DIRECTORY="/opt" \
+    USER_NAME="appuser"
+
+ENV \
+    PROJECT_DIRECTORY="${OPT_DIRECTORY:?}/repo" \
+    USER_DIRECTORY="/home/${USER_NAME:?}"
+
+RUN \
+    useradd "${USER_NAME}" --shell /bin/bash --create-home --home-dir "${USER_DIRECTORY}" \
+    && mkdir -p "${PROJECT_DIRECTORY}" \
+    && chown -R "${USER_NAME}:${USER_NAME}" "${OPT_DIRECTORY}" "${USER_DIRECTORY}" \
+    && chmod -R 755 "${PROJECT_DIRECTORY}"  "${OPT_DIRECTORY}" "${USER_DIRECTORY}"
+
+# Update System and install necessary packages
+RUN rm -f /etc/apt/apt.conf.d/docker-clean; echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache
+RUN \
+    python3 -m pip install --upgrade pip==${PIP_VERSION} && \
+    apt-get update --quiet && \
+    apt-get install --yes --quiet --no-install-recommends \
+    build-essential \
+    pkg-config \
+    nano \
+    curl \
+    wget \
+    git \
+    tree \
+    procps \
+    openssh-client \
+    && rm -rf /var/lib/apt/lists/*
+
+############################################
+# Stage 2: Build the wheel
+############################################
+FROM base_stage AS build_stage
+
+# Install pipx and poetry
+RUN python3 -m pip install pipx && \
+    pipx install poetry==1.8.5 && \
+    pipx ensurepath
+
+# Set PATH to include pipx binaries
+ENV PATH="/root/.local/bin:$PATH"
+
+# Copy project files and build wheel
+WORKDIR ${PROJECT_DIRECTORY}
+COPY --chown=${USER_NAME}:${USER_NAME} . .
+RUN rm -rf .git
+
+# Build wheel with poetry
+RUN poetry build -f wheel
+
+############################################
+# Stage 3: Final image
+############################################
+FROM base_stage AS final_stage
+
+# Copy wheel from build stage
+COPY --from=build_stage ${PROJECT_DIRECTORY}/dist/*.whl /tmp/
+
+# Install wheel
+RUN pip install --no-cache-dir /tmp/*.whl && \
+    rm /tmp/*.whl
+
+# Switch to non-root user
+USER ${USER_NAME}
+WORKDIR ${USER_DIRECTORY}
